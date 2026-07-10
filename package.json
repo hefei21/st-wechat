@@ -1,0 +1,11 @@
+{
+  "name": "st-wechat",
+  "version": "1.0.0",
+  "description": "ST WeChat Bot - 酒馆角色卡微信接入插件 (iLink/ClawBot)",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "AGPL-3.0"
+}

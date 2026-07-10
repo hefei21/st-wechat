@@ -1,0 +1,20 @@
+# ========================================
+#  ST WeChat Bot - 配置文件
+# ========================================
+# 此插件自动读取酒馆的 settings.json 和 secrets.json，
+# LLM 端点和密钥均自动获取。
+#
+# 以下为可选覆盖项，仅在自动检测失败时使用。
+
+# LLM 端点覆盖（如果日志显示 URL 是 https://api.openai.com，在此设置）
+endpoint: https://api.deepseek.com/v1
+
+# LLM 模型名覆盖（如果日志显示 gpt-4o-mini，在此设置）
+model: deepseek-chat
+
+# ST 数据目录的相对路径（从插件目录出发）
+# 默认值适用于标准 ST 目录结构，通常不需要修改
+# 插件位置:   ST/plugins/st-wechat/
+# 数据位置:   ST/data/default-user/
+dataRoot: ../../data/default-user
+

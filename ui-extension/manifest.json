@@ -1,0 +1,13 @@
+{
+    "display_name": "ST WeChat Bot",
+    "loading_order": 100,
+    "js": "index.js",
+    "css": "style.css",
+    "author": "st-wechat",
+    "version": "1.0.0",
+    "homePage": "https://github.com/your/st-wechat",
+    "auto_update": false,
+    "hooks": {
+        "activate": "onActivate"
+    }
+}

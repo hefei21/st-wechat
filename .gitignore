@@ -1,0 +1,4 @@
+node_modules/
+.env
+.wechat_creds.json
+*.log

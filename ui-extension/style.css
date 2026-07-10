@@ -1,0 +1,75 @@
+/* ST WeChat Bot 扩展面板样式 */
+.st-wechat-panel {
+    margin-bottom: 10px;
+}
+.st-wechat-content {
+    padding: 12px 0;
+}
+.st-wechat-state {
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #0f3460;
+    color: #fff;
+    text-align: center;
+}
+.st-wechat-state.logged-in { color: #00d2ff; }
+.st-wechat-state.error { color: #e94560; }
+.st-wechat-state.scanning { animation: st-wechat-pulse 1.5s infinite; }
+.st-wechat-qrcode {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    margin-bottom: 12px;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.st-wechat-qrcode img {
+    max-width: 240px;
+    border-radius: 4px;
+}
+.st-wechat-qrcode .placeholder {
+    color: #666;
+    font-size: 14px;
+}
+.st-wechat-info {
+    font-size: 13px;
+    color: #aaa;
+    margin-bottom: 12px;
+}
+.st-wechat-info p {
+    margin: 4px 0;
+}
+.st-wechat-info code {
+    color: #00d2ff;
+}
+.st-wechat-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+.st-wechat-link,
+.st-wechat-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    cursor: pointer;
+    border: none;
+    background: #e94560;
+    color: #fff;
+    transition: opacity 0.2s;
+}
+.st-wechat-link:hover,
+.st-wechat-btn:hover {
+    opacity: 0.85;
+}
+@keyframes st-wechat-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
