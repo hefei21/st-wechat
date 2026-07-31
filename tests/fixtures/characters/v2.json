@@ -1,0 +1,15 @@
+{
+  "spec": "chara_card_v2",
+  "spec_version": "2.0",
+  "data": {
+    "name": "测试角色",
+    "description": "仅用于自动化测试的脱敏角色。",
+    "personality": "沉稳",
+    "scenario": "测试场景",
+    "first_mes": "你好，这是测试开场白。",
+    "mes_example": "<START>\n{{user}}: 测试\n{{char}}: 收到",
+    "extensions": {
+      "world": "测试世界"
+    }
+  }
+}

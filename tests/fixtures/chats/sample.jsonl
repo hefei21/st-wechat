@@ -1,0 +1,4 @@
+{"name":"测试角色","created":0,"summary":"","wechat_user":"test-user","wechat_chat":true}
+{"name":"System","is_user":false,"is_system":true,"mes":"系统记录","send_date":0}
+{"name":"You","is_user":true,"mes":"你好","send_date":1}
+{"name":"测试角色","is_user":false,"mes":"你好呀","send_date":2,"swipes":["你好呀"]}

@@ -1,0 +1,24 @@
+{
+  "entries": {
+    "0": {
+      "uid": 0,
+      "key": ["龙"],
+      "keysecondary": [],
+      "content": "龙生活在测试山谷。",
+      "constant": false,
+      "selective": false,
+      "order": 100,
+      "depth": 4,
+      "position": 0
+    },
+    "1": {
+      "uid": 1,
+      "key": [],
+      "content": "这是常驻设定。",
+      "constant": true,
+      "order": 50,
+      "depth": 8,
+      "position": 1
+    }
+  }
+}

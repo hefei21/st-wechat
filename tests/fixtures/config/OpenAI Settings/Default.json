@@ -1,0 +1,6 @@
+{
+  "openai_model": "deepseek-v4-flash",
+  "openai_endpoint": "https://api.deepseek.com",
+  "openai_source": "deepseek",
+  "openai_max_context": 64000
+}

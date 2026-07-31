@@ -4,6 +4,14 @@
   "description": "ST WeChat Bot - 酒馆角色卡微信接入插件 (iLink/ClawBot)",
   "type": "module",
   "main": "src/index.js",
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "check": "node scripts/check.js",
+    "verify": "npm run check && npm test",
+    "preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/preflight.ps1",
+    "package:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-plugin.ps1"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

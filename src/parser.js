@@ -17,7 +17,8 @@ import crypto from 'node:crypto';
  */
 export function extractFromPNG(pngPath) {
     const buffer = fs.readFileSync(pngPath);
-    return parsePNGChunks(buffer);
+    const parsed = parsePNGChunks(buffer);
+    return parsed ? normalizeCharacterCard(parsed) : null;
 }
 
 /**
@@ -84,29 +85,33 @@ export function listCharacters(charsDir) {
     if (!fs.existsSync(charsDir)) return [];
 
     const files = fs.readdirSync(charsDir);
-    const seen = new Set();
     const chars = [];
 
     for (const file of files) {
         const ext = path.extname(file).toLowerCase();
         const name = path.basename(file, ext);
 
-        if (seen.has(name)) continue;
-        seen.add(name);
+        // SillyTavern stores installed character cards as PNG files. JSON is an
+        // import/export format: dropping it into the characters directory does
+        // not make it visible in the SillyTavern UI. Treating those files as
+        // installed characters would create Bot-only "ghost" roles.
+        if (ext === '.webp') {
+            console.warn(`[Parser] 暂不支持 WebP 角色卡: ${file}`);
+            continue;
+        }
+        if (ext !== '.png') continue;
 
         try {
-            let data = null;
-
-            if (ext === '.json') {
-                const jsonPath = path.join(charsDir, file);
-                data = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-            } else if (ext === '.png' || ext === '.webp') {
-                const imgPath = path.join(charsDir, file);
-                data = extractFromPNG(imgPath);
-            }
+            const imgPath = path.join(charsDir, file);
+            const data = extractFromPNG(imgPath);
 
             if (data) {
-                chars.push({ name: data.name || name, file: file, data });
+                chars.push({
+                    id: stableCharacterId(file),
+                    name: data.name || name,
+                    file,
+                    data,
+                });
             }
         } catch (err) {
             console.warn(`[Parser] 加载角色失败: ${file} - ${err.message}`);
@@ -124,9 +129,77 @@ export function listCharacters(charsDir) {
  */
 export function loadCharacter(charsDir, charName) {
     const chars = listCharacters(charsDir);
-    const found = chars.find(c =>
-        c.name === charName ||
-        c.name.toLowerCase() === charName.toLowerCase()
+    const query = String(charName || '').trim().toLowerCase();
+    if (!query) return null;
+
+    const byId = chars.find(character => character.id.toLowerCase() === query);
+    if (byId) return byId;
+
+    const byFile = chars.find(character =>
+        path.basename(character.file).toLowerCase() === query
+        || path.basename(character.file, path.extname(character.file)).toLowerCase() === query
     );
-    return found || null;
+    if (byFile) return byFile;
+
+    const byName = chars.filter(character => character.name.toLowerCase() === query);
+    return byName.length === 1 ? byName[0] : null;
+}
+
+/**
+ * 将 Character Card V1/V2/V3 及 SillyTavern 包装格式统一为内部结构。
+ */
+export function normalizeCharacterCard(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new Error('角色卡必须是 JSON 对象');
+    }
+
+    const source = input.data && typeof input.data === 'object' && !Array.isArray(input.data)
+        ? input.data
+        : input;
+    const name = stringField(source.name);
+    if (!name) throw new Error('角色卡缺少 name');
+
+    return {
+        ...source,
+        name,
+        description: stringField(source.description),
+        personality: stringField(source.personality),
+        scenario: stringField(source.scenario),
+        first_mes: stringField(source.first_mes ?? source.first_message),
+        mes_example: stringField(source.mes_example ?? source.example_dialogue),
+        creator_notes: stringField(source.creator_notes),
+        system_prompt: stringField(source.system_prompt),
+        post_history_instructions: stringField(source.post_history_instructions),
+        alternate_greetings: stringArray(source.alternate_greetings),
+        tags: stringArray(source.tags),
+        extensions: objectField(source.extensions),
+        character_book: objectOrNull(source.character_book),
+        spec: stringField(input.spec),
+        spec_version: stringField(input.spec_version),
+    };
+}
+
+export function stableCharacterId(fileName) {
+    const fileKey = path.basename(String(fileName || ''), path.extname(String(fileName || '')))
+        .normalize('NFKC')
+        .trim()
+        .toLowerCase();
+    if (!fileKey) throw new Error('角色文件名不能为空');
+    return `char_${crypto.createHash('sha256').update(fileKey).digest('hex').slice(0, 16)}`;
+}
+
+function stringField(value) {
+    return typeof value === 'string' ? value : '';
+}
+
+function stringArray(value) {
+    return Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
+}
+
+function objectField(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function objectOrNull(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
