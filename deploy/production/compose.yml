@@ -1,0 +1,45 @@
+# ST WeChat / SillyTavern 生产环境模板
+#
+# 将本文件放到 Docker 主机的 SillyTavern 根目录，再通过 Docker Compose CLI
+# 或容器管理图形界面创建项目。
+# 根目录下应已有 config、data、plugins 和 public 四个目录；相对路径可避免
+# 把某台主机的内部绝对路径写入仓库。
+#
+# 当前兼容性基线为 SillyTavern 1.16.0。升级镜像前先按 docs/DEPLOYMENT.md
+# 建立完整备份并在独立环境验证。
+
+services:
+  sillytavern:
+    image: ghcr.io/sillytavern/sillytavern:1.16.0
+    container_name: sillytavern
+    init: true
+    ports:
+      # 当前默认供受控局域网或 VPN 使用，禁止把此端口直接暴露到公网。
+      # 只有确认同机反向代理能访问宿主机回环端口后，才改为 127.0.0.1:8000:8000。
+      - "8000:8000"
+    volumes:
+      - ./config:/home/node/app/config
+      - ./data:/home/node/app/data
+      - ./plugins:/home/node/app/plugins
+      - ./public/scripts/extensions/third-party:/home/node/app/public/scripts/extensions/third-party
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - st-wechat-production
+
+networks:
+  st-wechat-production:
+    name: st-wechat-production
+    driver: bridge

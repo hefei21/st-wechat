@@ -1,0 +1,45 @@
+# ST WeChat 独立测试环境
+#
+# 使用方式：
+# 1. 在 Compose 所在目录创建 runtime 下方四个独立测试目录。
+# 2. 将插件包解压到 runtime/plugins/st-wechat，确保其中直接包含 package.json。
+# 3. 使用 Docker Compose CLI 或容器管理图形界面创建项目 st-wechat-test。
+# 4. 端口 18000 只允许局域网/VPN 访问，不要转发到公网。
+#
+# 为避免同时升级 SillyTavern，优先把 image 改为生产容器当前使用的
+# 完整版本标签或 digest。若当前管理工具无法查看 digest，保持当前标签，
+# 并在创建项目时关闭“总是拉取最新镜像”。
+
+services:
+  sillytavern-test:
+    image: ghcr.io/sillytavern/sillytavern:latest
+    container_name: sillytavern-test
+    init: true
+    ports:
+      - "18000:8000"
+    volumes:
+      - ./runtime/config:/home/node/app/config
+      - ./runtime/data:/home/node/app/data
+      - ./runtime/plugins:/home/node/app/plugins
+      - ./runtime/public/scripts/extensions/third-party:/home/node/app/public/scripts/extensions/third-party
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - st-wechat-test
+
+networks:
+  st-wechat-test:
+    name: st-wechat-test
+    driver: bridge
