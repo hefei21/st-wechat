@@ -703,16 +703,17 @@ export class SessionManager {
         const user = this.getUser(userId);
         if (!user.current) return '你还没有选择角色。发送 /list 查看可用角色';
 
-        const cs = user.chars[user.current];
+        const cs = this.ensureCharSession(userId);
+        if (!cs) return '当前角色已不存在，请发送 /list 重新选择角色';
         const roles = Object.keys(user.chars);
-        let info = `当前角色：${cs?.characterName || '未知'}\n`;
-        info += `对话轮次：${countUserTurns(cs?.history || [])}\n`;
-        if (cs?.chatPath) info += `当前聊天：${path.basename(cs.chatPath)}\n`;
+        let info = `当前角色：${cs.characterName}\n`;
+        info += `对话轮次：${countUserTurns(cs.history || [])}\n`;
+        if (cs.chatPath) info += `当前聊天：${path.basename(cs.chatPath)}\n`;
 
         if (roles.length > 1) {
             info += `已对话过：${roles.map(id => user.chars[id]?.characterName || id).join(', ')}\n`;
         }
-        if (cs?.summary) {
+        if (cs.summary) {
             info += `记忆：${cs.summary.slice(0, 100)}${cs.summary.length > 100 ? '...' : ''}`;
         }
         const operation = this.runtimeStatusProvider?.(userId, excludeOperationId);

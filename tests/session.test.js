@@ -69,7 +69,11 @@ test('first switch reuses the latest shared chat and restart restores it', async
             registry: new ChatRegistry(registryPath, chatsDir),
             characterProvider: () => [character],
         });
-        const restored = restarted.ensureCharSession('owner');
+        const status = await restarted.handle('owner', '/status');
+        assert.match(status, /当前角色：Alice/);
+        assert.match(status, /对话轮次：1/);
+        assert.ok(status.includes(`当前聊天：${path.basename(existing.path)}`));
+        const restored = restarted.getCharSession('owner');
         assert.equal(restored.chatPath, existing.path);
         assert.equal(restored.history.length, 2);
         restarted.close();
