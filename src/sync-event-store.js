@@ -18,12 +18,14 @@ export class SyncEventStore {
         this.dirty = false;
     }
 
-    append(chatPath, messages, revision = '') {
+    append(chatPath, messages, revision = '', options = {}) {
         const event = {
             id: `wechat-${Date.now()}-${this.randomUUID()}`,
             chatPath: this.toRelative(chatPath),
             revision: String(revision || ''),
             createdAt: Date.now(),
+            action: options.action === 'reload' ? 'reload' : 'append',
+            reason: String(options.reason || ''),
             messages: messages.map(message => ({
                 role: message.role,
                 content: String(message.content ?? ''),

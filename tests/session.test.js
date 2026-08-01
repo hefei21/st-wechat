@@ -1189,6 +1189,10 @@ test('swipe selection is persisted in JSONL and restored after restart', async (
         });
         await manager.cmdSwitch('owner', character.id);
         assert.match(await manager.cmdSwipe('owner'), /回答二/);
+        const [reloadEvent] = manager.syncEvents.list(chat.path);
+        assert.equal(reloadEvent.action, 'reload');
+        assert.equal(reloadEvent.reason, 'swipe');
+        assert.deepEqual(reloadEvent.messages, []);
         const registryPath = manager.registry.filePath;
         manager.close();
 
@@ -1203,6 +1207,47 @@ test('swipe selection is persisted in JSONL and restored after restart', async (
         assert.deepEqual(restored.alternatives, ['回答一', '回答二']);
         assert.equal(restored.history.at(-1).content, '回答二');
         restarted.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('retry persists the replacement and asks the browser to reload the same chat', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-retry-reload-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        chatStore.appendExchange(chat.path, [
+            { role: 'user', content: 'question' },
+            { role: 'assistant', content: 'old reply' },
+        ], 'Alice');
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.json',
+            data: { name: 'Alice', first_mes: 'hello' },
+        };
+        const manager = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore,
+            characterProvider: () => [character],
+            generator: async () => 'new reply',
+        });
+        await manager.cmdSwitch('owner', character.id);
+
+        const reply = await manager.cmdRetry('owner');
+
+        assert.match(reply, /new reply/);
+        const restored = chatStore.parse(chat.path);
+        assert.equal(restored.messages.at(-1).content, 'new reply');
+        assert.deepEqual(restored.messages.at(-1)._raw.swipes, ['old reply', 'new reply']);
+        const [reloadEvent] = manager.syncEvents.list(chat.path);
+        assert.equal(reloadEvent.action, 'reload');
+        assert.equal(reloadEvent.reason, 'retry');
+        assert.deepEqual(reloadEvent.messages, []);
+        manager.close();
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }

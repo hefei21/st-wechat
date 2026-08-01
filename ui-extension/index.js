@@ -352,14 +352,19 @@ async function applyWechatUpdates(expectedChat, updates) {
         || current.chatId !== expectedChat.chatId) return;
     try {
         const context = getContext();
-        const result = await projectWechatUpdates(
-            context,
-            updates,
-            updateIds => acknowledgeWechatUpdates(current, updateIds)
-        );
+        const result = await projectWechatUpdates(context, updates);
+        const afterProjection = currentBrowserChat();
+        if (!afterProjection
+            || afterProjection.characterRef !== current.characterRef
+            || afterProjection.chatId !== current.chatId) {
+            throw new Error('同步投影后当前 chatId 发生变化');
+        }
+        await acknowledgeWechatUpdates(current, result.updateIds);
         browserStateKey = '';
         await reportBrowserState('state');
-        if (result.added > 0) {
+        if (result.reloaded) {
+            window.toastr?.success('微信端已更新当前聊天状态，界面已自动重载。', 'ST WeChat');
+        } else if (result.added > 0) {
             window.toastr?.success(`已自动合并微信端更新（新增 ${result.added} 条）。`, 'ST WeChat');
         }
     } catch (error) {

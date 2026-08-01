@@ -71,8 +71,7 @@ test('a rendering failure rolls back the complete staged WeChat batch', async ()
     assert.deepEqual(context.chat.map(message => message.mes), ['existing']);
 });
 
-test('browser projection acknowledges Bot updates without saving JSONL again', async () => {
-    const acknowledged = [];
+test('browser projection applies Bot updates without saving JSONL again', async () => {
     const context = {
         chat: [],
         addOneMessage: () => undefined,
@@ -86,8 +85,27 @@ test('browser projection acknowledges Bot updates without saving JSONL again', a
             { role: 'user', content: 'question' },
             { role: 'assistant', content: 'reply' },
         ],
-    }], ids => acknowledged.push(...ids));
+    }]);
     assert.equal(result.added, 2);
-    assert.deepEqual(acknowledged, ['wechat-projection']);
+    assert.deepEqual(result.updateIds, ['wechat-projection']);
     assert.deepEqual(context.chat.map(message => message.mes), ['question', 'reply']);
+});
+
+test('a reload event reloads JSONL instead of appending replacement text', async () => {
+    let reloads = 0;
+    const context = {
+        chat: [{ name: 'Alice', is_user: false, mes: 'old reply' }],
+        reloadCurrentChat: async () => { reloads += 1; },
+        saveChat: () => { throw new Error('reload projection must not save'); },
+    };
+    const result = await projectWechatUpdates(context, [{
+        id: 'wechat-retry',
+        action: 'reload',
+        reason: 'retry',
+        messages: [],
+    }]);
+    assert.equal(reloads, 1);
+    assert.equal(result.reloaded, true);
+    assert.deepEqual(result.updateIds, ['wechat-retry']);
+    assert.equal(context.chat.length, 1);
 });

@@ -124,3 +124,26 @@ test('unacknowledged events are never discarded by the retention hint', () => {
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+
+test('reload sync events persist their action without replacement messages', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-sync-reload-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const chatPath = path.join(chatsDir, 'Alice', 'chat.jsonl');
+        const storePath = path.join(directory, 'sync-events.json');
+        fs.mkdirSync(path.dirname(chatPath), { recursive: true });
+        fs.writeFileSync(chatPath, '{}\n');
+        const store = new SyncEventStore(storePath, chatsDir);
+        store.append(chatPath, [], 'revision', { action: 'reload', reason: 'swipe' });
+        store.close();
+
+        const restored = new SyncEventStore(storePath, chatsDir);
+        const event = restored.list(chatPath)[0];
+        assert.equal(event.action, 'reload');
+        assert.equal(event.reason, 'swipe');
+        assert.deepEqual(event.messages, []);
+        restored.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});

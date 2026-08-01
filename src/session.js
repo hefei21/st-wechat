@@ -725,6 +725,13 @@ export class SessionManager {
         this.syncEvents.append(chatPath, messages, revision);
     }
 
+    queueWechatBrowserReload(chatPath, revision, reason) {
+        this.syncEvents.append(chatPath, [], revision, {
+            action: 'reload',
+            reason,
+        });
+    }
+
     acknowledgeWechatBrowserUpdates({ characterRef, chatId, updateIds }) {
         const character = resolveCharacter(this.characterProvider(), characterRef);
         if (!character) return { acknowledged: 0 };
@@ -868,7 +875,8 @@ export class SessionManager {
                 ));
                 assertUnchanged();
                 const swipe = this.chatStore.replaceLastAssistant(cs.chatPath, generated);
-                this.observeChat(cs.chatPath, { source: 'wechat' });
+                const tracked = this.observeChat(cs.chatPath, { source: 'wechat' });
+                this.queueWechatBrowserReload(cs.chatPath, tracked.revision, 'retry');
                 return { reply: generated, swipe };
             });
             this.metrics?.increment('generationsSucceeded');
@@ -899,11 +907,14 @@ export class SessionManager {
         if (!cs) return '请先选择角色';
         if (!cs.alternatives || cs.alternatives.length === 0) return '没有备选回复';
         cs.swipeIndex = (cs.swipeIndex + 1) % cs.alternatives.length;
-        const selected = await this.coordinator.run(cs.chatPath, async () =>
-            this.chatStore.selectLastAssistantSwipe(cs.chatPath, cs.swipeIndex)
-        );
+        const selected = await this.coordinator.run(cs.chatPath, async () => {
+            const result = this.chatStore.selectLastAssistantSwipe(cs.chatPath, cs.swipeIndex);
+            if (!result) return null;
+            const tracked = this.observeChat(cs.chatPath, { source: 'wechat' });
+            this.queueWechatBrowserReload(cs.chatPath, tracked.revision, 'swipe');
+            return result;
+        });
         if (!selected) return '无法切换聊天文件中的备选回复';
-        const tracked = this.observeChat(cs.chatPath, { source: 'wechat' });
         const alt = selected.content;
         cs.alternatives = selected.swipes;
         for (let i = cs.history.length - 1; i >= 0; i--) {

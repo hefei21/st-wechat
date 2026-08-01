@@ -52,10 +52,20 @@ export async function mergeWechatUpdates(context, updates = []) {
  * event is published. The browser only projects them into its current UI and
  * acknowledges the event; it must not save the whole chat again.
  */
-export async function projectWechatUpdates(context, updates, acknowledge) {
-    const result = await mergeWechatUpdates(context, updates);
-    await acknowledge?.(result.updateIds);
-    return result;
+export async function projectWechatUpdates(context, updates) {
+    const validUpdates = updates.filter(update => update?.id && Array.isArray(update.messages));
+    if (validUpdates.some(update => update.action === 'reload')) {
+        if (typeof context?.reloadCurrentChat !== 'function') {
+            throw new Error('SillyTavern does not expose reloadCurrentChat');
+        }
+        await context.reloadCurrentChat();
+        return {
+            added: 0,
+            updateIds: validUpdates.map(update => update.id),
+            reloaded: true,
+        };
+    }
+    return mergeWechatUpdates(context, validUpdates);
 }
 
 function isSameMessage(message, source, syncId) {
