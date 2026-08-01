@@ -65,6 +65,7 @@ export async function finalizeGenerationLifecycle({
  */
 export async function waitForBrowserLease({
     acquire,
+    onStale,
     onWaiting,
     pollMs = 250,
     delay = ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -74,6 +75,10 @@ export async function waitForBrowserLease({
         try {
             const state = await acquire();
             if (state?.lease) return { state, waited: waiting };
+            if (state?.stale) {
+                await onStale?.(state);
+                continue;
+            }
         } catch {
             // 网络瞬断与“Bot 正在生成”采用同一安全策略：保持生成暂停并继续登记。
         }

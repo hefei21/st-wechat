@@ -359,6 +359,117 @@ test('a browser report cannot consume a Bot write before its sync event is publi
     }
 });
 
+test('a stale browser revision cannot acquire a generation lease', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-stale-browser-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.png',
+            data: { name: 'Alice', first_mes: 'hello' },
+        };
+        const manager = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore,
+            characterProvider: () => [character],
+        });
+        manager.registry.setBotSelection(character.id, chat.path);
+        const baseline = await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'state',
+        });
+        chatStore.appendExchange(chat.path, [
+            { role: 'user', content: 'newer question' },
+            { role: 'assistant', content: 'newer reply' },
+        ], character.name);
+
+        const stale = await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'generation-started',
+            operationId: 'stale-tab',
+            revision: baseline.revision,
+        });
+        assert.equal(stale.stale, true);
+        assert.equal(stale.lease, false);
+        assert.notEqual(stale.revision, baseline.revision);
+        assert.equal(manager.coordinator.leases.size, 0);
+        manager.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('pending Bot projections block a browser generation lease until acknowledged', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-pending-projection-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.png',
+            data: { name: 'Alice', first_mes: 'hello' },
+        };
+        const manager = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore,
+            characterProvider: () => [character],
+        });
+        manager.registry.setBotSelection(character.id, chat.path);
+        manager.registry.setBrowserSelection(character.id, chat.path);
+        const baseline = await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'state',
+        });
+        const written = chatStore.appendExchange(chat.path, [
+            { role: 'user', content: 'Bot question' },
+            { role: 'assistant', content: 'Bot reply' },
+        ], character.name);
+        const update = manager.observeChat(chat.path, { source: 'wechat' });
+        manager.queueWechatBrowserUpdate(chat.path, written, update.revision);
+
+        const blocked = await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'generation-started',
+            operationId: 'pending-tab',
+            revision: update.revision,
+        });
+        assert.equal(blocked.stale, true);
+        assert.equal(blocked.pendingUpdates, 1);
+        assert.equal(blocked.lease, false);
+
+        const eventId = manager.syncEvents.list(chat.path)[0].id;
+        manager.acknowledgeWechatBrowserUpdates({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            updateIds: [eventId],
+        });
+        const acquired = await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'generation-started',
+            operationId: 'pending-tab',
+            revision: update.revision,
+        });
+        assert.equal(acquired.lease, true);
+        manager.coordinator.releaseLease(chat.path, 'pending-tab');
+        assert.notEqual(baseline.revision, update.revision);
+        manager.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test('a browser sync poll cannot consume a Bot write before its direct event is published', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-poll-race-'));
     try {

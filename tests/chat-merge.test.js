@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeWechatUpdates } from '../ui-extension/chat-merge.js';
+import { mergeWechatUpdates, projectWechatUpdates } from '../ui-extension/chat-merge.js';
 
 test('wechat increments are merged without replacing the browser reply', async () => {
     const rendered = [];
@@ -69,4 +69,25 @@ test('a rendering failure rolls back the complete staged WeChat batch', async ()
         /render failed/
     );
     assert.deepEqual(context.chat.map(message => message.mes), ['existing']);
+});
+
+test('browser projection acknowledges Bot updates without saving JSONL again', async () => {
+    const acknowledged = [];
+    const context = {
+        chat: [],
+        addOneMessage: () => undefined,
+        saveChat: () => {
+            throw new Error('projection must not save');
+        },
+    };
+    const result = await projectWechatUpdates(context, [{
+        id: 'wechat-projection',
+        messages: [
+            { role: 'user', content: 'question' },
+            { role: 'assistant', content: 'reply' },
+        ],
+    }], ids => acknowledged.push(...ids));
+    assert.equal(result.added, 2);
+    assert.deepEqual(acknowledged, ['wechat-projection']);
+    assert.deepEqual(context.chat.map(message => message.mes), ['question', 'reply']);
 });

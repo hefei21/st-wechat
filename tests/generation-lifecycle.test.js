@@ -96,6 +96,24 @@ test('browser generation waits and retries lease acquisition instead of throwing
     assert.equal(result.state.revision, 'ready');
 });
 
+test('browser generation reloads stale state before retrying the lease', async () => {
+    const attempts = [];
+    const staleRevisions = [];
+    const result = await waitForBrowserLease({
+        acquire: async () => {
+            attempts.push(attempts.length + 1);
+            return attempts.length === 1
+                ? { lease: false, stale: true, revision: 'new-revision' }
+                : { lease: true, revision: 'new-revision' };
+        },
+        onStale: async state => staleRevisions.push(state.revision),
+        delay: async () => undefined,
+    });
+    assert.deepEqual(attempts, [1, 2]);
+    assert.deepEqual(staleRevisions, ['new-revision']);
+    assert.equal(result.waited, false);
+});
+
 test('generation settle waits until generation stops and stream activity is quiet', async () => {
     let time = 0;
     let generating = true;

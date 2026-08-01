@@ -525,7 +525,7 @@ export class SessionManager {
         return `✅ 已切换到 ${character.name}\n\n${character.name}: ${greeting}`;
     }
 
-    async reportBrowserState({ characterRef, chatId, event, operationId }) {
+    async reportBrowserState({ characterRef, chatId, event, operationId, revision }) {
         const character = resolveCharacter(this.characterProvider(), characterRef);
         if (!character) throw new Error('无法识别浏览器当前角色');
         const chatPath = this.chatStore.resolveChatPathById(characterChatDirectory(character), chatId);
@@ -536,7 +536,20 @@ export class SessionManager {
         // Establish the browser lease before any asynchronous file observation.
         // Otherwise an inbound Bot request can pass waitForLease while this
         // request is still reading the chat state.
-        if (event === 'generation-started') {
+        if (event === 'generation-started' && !this.coordinator.isActive(chatPath)) {
+            const currentRevision = this.coordinator.revision(chatPath);
+            const pendingUpdates = this.syncEvents.list(chatPath);
+            if ((revision && String(revision) !== currentRevision) || pendingUpdates.length > 0) {
+                return {
+                    characterId: character.id,
+                    revision: currentRevision,
+                    reset: false,
+                    sameCurrent: this.registry.isSameCurrentChat(character.id),
+                    lease: false,
+                    stale: true,
+                    pendingUpdates: pendingUpdates.length,
+                };
+            }
             lease = this.coordinator.acquireLease(chatPath, operationId);
         } else if (event === 'generation-renew') {
             lease = this.coordinator.renewLease(chatPath, operationId);
@@ -556,10 +569,9 @@ export class SessionManager {
             lastEvent: event || 'state',
             operationId: operationId || null,
         });
-        // SillyTavern saves WeChat increments again after merging them into its
-        // in-memory chat. The tracker must consume that file revision, but those
-        // marked projection records are not new browser messages and must never
-        // be echoed back to WeChat as a browser notification.
+        // A later browser-authored save can include WeChat projection records
+        // that were previously merged into memory. They advance the file cursor
+        // but must never be echoed back to WeChat as browser-authored messages.
         const browserMessages = update.addedMessages.filter(message =>
             !isWechatProjectionMessage(message)
         );

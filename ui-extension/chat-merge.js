@@ -47,6 +47,17 @@ export async function mergeWechatUpdates(context, updates = []) {
     return { added: staged.length, updateIds };
 }
 
+/**
+ * Bot messages are already durable in the shared JSONL before their sync
+ * event is published. The browser only projects them into its current UI and
+ * acknowledges the event; it must not save the whole chat again.
+ */
+export async function projectWechatUpdates(context, updates, acknowledge) {
+    const result = await mergeWechatUpdates(context, updates);
+    await acknowledge?.(result.updateIds);
+    return result;
+}
+
 function isSameMessage(message, source, syncId) {
     if (message?.extra?.st_wechat_sync_id === syncId) return true;
     const raw = source?._raw && typeof source._raw === 'object' ? source._raw : {};

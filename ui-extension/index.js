@@ -20,7 +20,7 @@ import {
     waitForBrowserLease,
     waitForGenerationSettled,
 } from './generation-lifecycle.js';
-import { mergeWechatUpdates } from './chat-merge.js';
+import { projectWechatUpdates } from './chat-merge.js';
 
 const EXTENSION_DIR = 'third-party/st-wechat';
 const API_BASE = '/api/plugins/st-wechat';
@@ -178,8 +178,29 @@ function setupChatSync() {
         markGenerationActivity();
         const operationId = generationOperationId;
         let waitingToast = null;
-        generationStartPromise = waitForBrowserLease({
+        generationStartPromise = Promise.resolve(browserSyncPromise).then(() => waitForBrowserLease({
             acquire: () => reportBrowserState('generation-started', operationId),
+            onStale: async () => {
+                const expected = currentBrowserChat();
+                const context = getContext();
+                if (!expected || typeof context.reloadCurrentChat !== 'function') {
+                    throw new Error('当前 SillyTavern 不支持安全重载聊天');
+                }
+                window.toastr?.info(
+                    '检测到当前聊天已由另一端更新，正在重载同一聊天后继续发送。',
+                    'ST WeChat',
+                    { preventDuplicates: true }
+                );
+                await context.reloadCurrentChat();
+                const current = currentBrowserChat();
+                if (!current
+                    || current.characterRef !== expected.characterRef
+                    || current.chatId !== expected.chatId) {
+                    throw new Error('聊天重载后当前 chatId 发生变化');
+                }
+                browserStateKey = '';
+                await checkBrowserSync();
+            },
             onWaiting: () => {
                 waitingToast = window.toastr?.info(
                     '微信端正在处理当前聊天，本次浏览器消息已排队等待。',
@@ -187,7 +208,7 @@ function setupChatSync() {
                     { timeOut: 0, extendedTimeOut: 0, preventDuplicates: true }
                 );
             },
-        }).then(({ state, waited }) => {
+        })).then(({ state, waited }) => {
             if (waitingToast) window.toastr?.clear(waitingToast);
             if (waited) {
                 window.toastr?.success('微信端处理完成，正在继续发送浏览器消息。', 'ST WeChat');
@@ -268,7 +289,12 @@ async function reportBrowserState(event, operationId = null, options = {}) {
         const response = await fetch(`${API_BASE}/browser-state`, {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ ...current, event, operationId }),
+            body: JSON.stringify({
+                ...current,
+                event,
+                operationId,
+                revision: browserRevision,
+            }),
         });
         if (!response.ok) {
             if (options.required) throw new Error('无法登记浏览器生成事务');
@@ -326,11 +352,11 @@ async function applyWechatUpdates(expectedChat, updates) {
         || current.chatId !== expectedChat.chatId) return;
     try {
         const context = getContext();
-        const result = await mergeWechatUpdates(context, updates);
-        if (result.added > 0) {
-            await context.saveChat?.();
-        }
-        await acknowledgeWechatUpdates(current, result.updateIds);
+        const result = await projectWechatUpdates(
+            context,
+            updates,
+            updateIds => acknowledgeWechatUpdates(current, updateIds)
+        );
         browserStateKey = '';
         await reportBrowserState('state');
         if (result.added > 0) {
