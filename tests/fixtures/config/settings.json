@@ -1,9 +1,12 @@
 {
   "username": "测试用户",
-  "chat_completion_source": "custom",
-  "custom_url": "https://api.deepseek.com",
-  "custom_model": "deepseek-v4-flash",
-  "temp_openai": 0.9,
-  "openai_max_tokens": 1200,
-  "openai_max_context": 64000
+  "main_api": "openai",
+  "oai_settings": {
+    "chat_completion_source": "custom",
+    "custom_url": "https://api.deepseek.com/v1",
+    "custom_model": "deepseek-v4-flash",
+    "temp_openai": 0.9,
+    "openai_max_tokens": 1200,
+    "openai_max_context": 64000
+  }
 }

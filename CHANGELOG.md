@@ -19,6 +19,10 @@
 - 模型与生成参数统一读取 SillyTavern/插件配置，微信端不提供远程修改命令。
 - 默认自动跟随 SillyTavern 当前连接、精确密钥槽和生成参数；需要独立配置时可显式启用覆盖模式。
 
+### Fixed
+
+- 修复 SillyTavern 1.16 将聊天补全配置保存在 `oai_settings` 内时，自动模式回退到默认模型并找不到 Custom 密钥的问题。
+
 ### Removed
 
 - 移除 `/clear`、`/clear-context`、`/reload` 和 `/imp`，避免隐藏历史分叉、远程改配置和身份混淆。

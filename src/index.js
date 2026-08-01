@@ -52,7 +52,7 @@ async function init(router) {
     const cfg = load();
     metrics = new RuntimeMetrics();
     console.log(`[Bot] LLM 配置: ${cfg.llm.model || 'unknown'} @ ${cfg.llm.endpoint || 'unknown'}`);
-    console.log(`[Bot] API 来源: ${cfg.settings?.chat_completion_sources?.find(s => s.active)?.name || cfg.settings?.chat_completion_sources?.[0]?.name || 'unknown'}`);
+    console.log(`[Bot] API 来源: ${cfg.llm.source || 'unknown'}`);
     if (cfg.llm.apiKey) {
         console.log('[Bot] API 密钥: 已加载');
     } else {

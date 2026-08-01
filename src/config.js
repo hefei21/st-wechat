@@ -139,10 +139,11 @@ export function load() {
     const stDataDir = getStDataDir();
     const settings = readJSON(path.join(stDataDir, 'settings.json')) || {};
     const secrets = readJSON(path.join(stDataDir, 'secrets.json')) || {};
-    const preset = readOpenAIPreset(stDataDir, settings);
+    const chatCompletionSettings = selectChatCompletionSettings(settings);
+    const preset = readOpenAIPreset(stDataDir, chatCompletionSettings);
     const pluginConfig = loadPluginConfig();
 
-    const llm = buildLlmConfig({ pluginConfig, preset, settings, secrets });
+    const llm = buildLlmConfig({ pluginConfig, preset, settings: chatCompletionSettings, secrets });
     // 兼容旧调用方；新代码应使用 maxContextTokens。
     llm.maxContext = llm.maxContextTokens;
 
@@ -239,12 +240,14 @@ export function buildLlmConfig({ pluginConfig = {}, preset = {}, settings = {}, 
             temperature: firstFinite(
                 settings.temp_openai,
                 settings.temperature,
+                preset.temperature,
                 DEFAULT_LLM.temperature
             ),
             maxOutputTokens: boundedPositiveInteger(
                 MAX_OUTPUT_TOKENS,
                 settings.openai_max_tokens,
                 settings.amount_gen,
+                preset.maxOutputTokens,
                 DEFAULT_LLM.maxOutputTokens
             ),
             maxContextTokens: boundedPositiveInteger(
@@ -258,6 +261,7 @@ export function buildLlmConfig({ pluginConfig = {}, preset = {}, settings = {}, 
 
     return {
         configurationMode,
+        source: connection.source,
         provider: connection.provider,
         endpoint: connection.endpoint,
         model: connection.model,
@@ -289,6 +293,7 @@ function resolveAutomaticConnection(settings, preset) {
         const endpoint = firstString(settings.custom_url, preset.endpoint, DEFAULT_LLM.endpoint);
         const model = firstString(settings.custom_model, preset.model, DEFAULT_LLM.model);
         return {
+            source,
             provider: detectProvider({ endpoint, model, source }),
             endpoint,
             model,
@@ -305,6 +310,7 @@ function resolveAutomaticConnection(settings, preset) {
     );
     const provider = profile?.provider || detectProvider({ endpoint, model, source });
     return {
+        source,
         provider,
         endpoint,
         model,
@@ -321,11 +327,19 @@ function resolveOverrideConnection(pluginConfig) {
     }
     const normalizedProvider = detectProvider({ explicit: provider, endpoint, model });
     return {
+        source: 'override',
         provider: normalizedProvider,
         endpoint,
         model,
         secretSource: firstString(pluginConfig.secretSource, normalizedProvider),
     };
+}
+
+export function selectChatCompletionSettings(settings = {}) {
+    const nested = settings?.oai_settings;
+    return nested && typeof nested === 'object' && !Array.isArray(nested)
+        ? nested
+        : settings;
 }
 
 function normalizeProvider(provider) {
@@ -405,12 +419,7 @@ function readOpenAIPreset(stDataDir, settings) {
 
         const preset = JSON.parse(fs.readFileSync(presetPath, 'utf8'));
         const entry = (Array.isArray(preset) ? preset : [preset])[0] || {};
-        return {
-            endpoint: entry.openai_endpoint || entry.api_url || '',
-            model: entry.openai_model || entry.model || '',
-            source: entry.openai_source || entry.source || '',
-            maxContext: entry.openai_max_context || entry.max_context || 0,
-        };
+        return normalizeOpenAIPreset(entry);
     } catch (error) {
         logger.warn('读取 OpenAI 预设失败:', error.message);
         return {};
@@ -463,6 +472,45 @@ function positiveInteger(...values) {
         if (Number.isFinite(number) && number > 0) return Math.floor(number);
     }
     return 1;
+}
+
+function optionalFinite(...values) {
+    for (const value of values) {
+        if (value === undefined || value === null || value === '') continue;
+        const number = Number(value);
+        if (Number.isFinite(number)) return number;
+    }
+    return undefined;
+}
+
+function optionalPositiveInteger(...values) {
+    for (const value of values) {
+        if (value === undefined || value === null || value === '') continue;
+        const number = Number(value);
+        if (Number.isFinite(number) && number > 0) return Math.floor(number);
+    }
+    return undefined;
+}
+
+export function normalizeOpenAIPreset(entry = {}) {
+    const source = firstString(
+        entry.chat_completion_source,
+        entry.openai_source,
+        entry.source
+    ).toLowerCase();
+    const profile = SOURCE_PROFILES[source];
+    return {
+        endpoint: source === 'custom'
+            ? firstString(entry.custom_url, entry.openai_endpoint, entry.api_url)
+            : firstString(entry.openai_endpoint, entry.api_url),
+        model: source === 'custom'
+            ? firstString(entry.custom_model, entry.model)
+            : firstString(profile?.modelKey ? entry[profile.modelKey] : '', entry.openai_model, entry.model),
+        source,
+        temperature: optionalFinite(entry.temp_openai, entry.temperature),
+        maxOutputTokens: optionalPositiveInteger(entry.openai_max_tokens),
+        maxContext: optionalPositiveInteger(entry.openai_max_context, entry.max_context),
+    };
 }
 
 function boundedPositiveInteger(maximum, ...values) {

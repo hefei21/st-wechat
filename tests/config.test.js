@@ -4,9 +4,11 @@ import test from 'node:test';
 import {
     buildLlmConfig,
     detectProvider,
+    normalizeOpenAIPreset,
     parseSimpleYaml,
     resolveDataRoot,
     resolveSecret,
+    selectChatCompletionSettings,
 } from '../src/config.js';
 
 test('parseSimpleYaml preserves scalar types', () => {
@@ -119,6 +121,64 @@ test('auto mode follows a Custom DeepSeek connection and its exact secret slot',
     assert.equal(result.maxOutputTokens, 2048);
     assert.equal(result.maxContextTokens, 128000);
     assert.equal(result.thinking, 'disabled');
+});
+
+test('SillyTavern 1.16 nested oai_settings are selected instead of root defaults', () => {
+    const rootSettings = {
+        main_api: 'openai',
+        amount_gen: 350,
+        max_context: 8192,
+        oai_settings: {
+            chat_completion_source: 'custom',
+            custom_url: 'https://api.deepseek.com/v1',
+            custom_model: 'deepseek-v4-flash',
+            temp_openai: 0.8,
+            openai_max_tokens: 2400,
+            openai_max_context: 128000,
+        },
+    };
+
+    const selected = selectChatCompletionSettings(rootSettings);
+    const result = buildLlmConfig({
+        pluginConfig: { configurationMode: 'auto' },
+        settings: selected,
+        secrets: {
+            api_key_custom: 'custom-key',
+            api_key_deepseek: 'must-not-be-used',
+        },
+    });
+
+    assert.equal(selected, rootSettings.oai_settings);
+    assert.equal(result.source, 'custom');
+    assert.equal(result.provider, 'deepseek');
+    assert.equal(result.model, 'deepseek-v4-flash');
+    assert.equal(result.endpoint, 'https://api.deepseek.com/v1');
+    assert.equal(result.secretSource, 'custom');
+    assert.equal(result.apiKey, 'custom-key');
+    assert.equal(result.temperature, 0.8);
+    assert.equal(result.maxOutputTokens, 2400);
+    assert.equal(result.maxContextTokens, 128000);
+});
+
+test('SillyTavern 1.16 preset fields preserve Custom connection semantics', () => {
+    assert.deepEqual(normalizeOpenAIPreset({
+        chat_completion_source: 'custom',
+        custom_url: 'https://api.deepseek.com/v1',
+        custom_model: 'deepseek-v4-flash',
+        temperature: 0.7,
+        openai_max_tokens: 1800,
+        openai_max_context: 96000,
+    }), {
+        source: 'custom',
+        endpoint: 'https://api.deepseek.com/v1',
+        model: 'deepseek-v4-flash',
+        temperature: 0.7,
+        maxOutputTokens: 1800,
+        maxContext: 96000,
+    });
+
+    assert.equal(normalizeOpenAIPreset({}).temperature, undefined);
+    assert.equal(normalizeOpenAIPreset({}).maxOutputTokens, undefined);
 });
 
 test('auto mode follows the built-in DeepSeek source and generation settings', () => {
