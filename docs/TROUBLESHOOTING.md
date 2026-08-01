@@ -20,9 +20,12 @@ userId、真实聊天正文或 Docker 主机内部绝对路径。
 ## 模型连接失败或提示没有 API key
 
 1. 在 SillyTavern 本身确认当前聊天补全来源、模型和密钥可用。
-2. 查看 [`CONFIGURATION.md`](CONFIGURATION.md) 的 provider/secretSource 对应关系。
-3. DeepSeek 密钥保存在 Custom 密钥槽时设置 `secretSource: custom`。
-4. 在面板点击“测试模型连接”；错误只会返回分类和诊断编号，完整上游响应不会暴露。
+2. 默认 `configurationMode: auto` 会跟随当前来源；Custom 连接只读取 Custom 密钥槽，
+   内置 DeepSeek 来源只读取 DeepSeek 密钥槽，不会互相兜底。
+3. 若使用 `configurationMode: override`，检查 `provider`、`endpoint`、`model` 和
+   `secretSource` 是否与 SillyTavern 中实际保存密钥的位置一致。
+4. 查看 [`CONFIGURATION.md`](CONFIGURATION.md) 的模式说明，并在面板点击“测试模型连接”；
+   错误只会返回分类和诊断编号，完整上游响应不会暴露。
 
 ## 浏览器与微信没有互相通知
 

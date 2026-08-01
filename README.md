@@ -70,26 +70,31 @@ SillyTavern/
 ### 2. 编辑 config.yaml（如需要）
 
 ```yaml
-# 推荐的日常角色聊天配置
-provider: deepseek
-endpoint: https://api.deepseek.com
-model: deepseek-v4-flash
+# 默认跟随酒馆当前连接与生成配置
+configurationMode: auto
 thinking: disabled
-temperature: 0.9
-maxOutputTokens: 1200
-maxContextTokens: 64000
 charsPerToken: 3
 maxQueuedMessages: 20
 syncMode: notify
 ```
 
-如果不填，插件会尝试从 ST 预设文件自动读取。
+`auto` 会读取酒馆当前的聊天补全来源、端点、模型、对应密钥槽、温度、输出长度和上下文长度。
+酒馆使用 **Custom** 连接时会精确读取 Custom 密钥槽，不需要额外配置 `secretSource`。
 
-密钥会按最终 `provider` 精确读取，不会再回退到其他服务商的任意密钥。如果你在酒馆中通过 **Custom** 连接保存 DeepSeek 密钥，请额外配置：
+只有需要让 Bot 使用独立配置时才启用覆盖模式：
 
 ```yaml
+configurationMode: override
+provider: deepseek
+endpoint: https://api.deepseek.com/v1
+model: deepseek-v4-flash
 secretSource: custom
+temperature: 0.9
+maxOutputTokens: 1200
+maxContextTokens: 64000
 ```
+
+密钥始终从指定连接对应的 SillyTavern 密钥槽读取，不会跨槽回退，也不要写入 `config.yaml`。
 
 ### 3. 确保酒馆开启服务端插件
 
@@ -307,7 +312,7 @@ data/default-user/st-wechat/chat-registry.json
 
 ## 兼容性与安全边界
 
-- 默认模型为 `deepseek-v4-flash`，默认关闭 thinking。
+- 默认跟随 SillyTavern 当前模型与生成配置；插件默认关闭 thinking，可按需显式开启。
 - `dataRoot` 现已真正生效，但必须指向 SillyTavern 根目录内部。
 - 世界书只加载明确的全局书、当前角色绑定书和角色卡内嵌书，不再默认混入全部世界书。
 - 产品采用单所有者模型；首次部署需在本地扩展面板查看六位认领码，并在微信发送 `/claim 六位码`。

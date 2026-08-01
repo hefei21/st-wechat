@@ -1,29 +1,23 @@
 # ========================================
 #  ST WeChat Bot - 配置文件
 # ========================================
-# 此插件自动读取酒馆的 settings.json 和 secrets.json，
-# LLM 端点和密钥均自动获取。
-#
-# 以下为可选覆盖项，仅在自动检测失败时使用。
+# auto：跟随酒馆当前聊天补全来源、端点、模型、对应密钥槽及生成参数。
+# override：使用本文件中显式填写的 provider、endpoint、model、secretSource、
+# temperature、maxOutputTokens 和 maxContextTokens。
+configurationMode: auto
 
-# LLM 提供商与端点覆盖
-provider: deepseek
-endpoint: https://api.deepseek.com
-
-# 密钥默认按 provider 从 ST secrets.json 精确选择。
-# 如果 DeepSeek 是通过 ST 的 Custom 接口保存密钥，可显式设为 custom。
+# override 模式示例（auto 模式会忽略这些字段）：
+# provider: deepseek
+# endpoint: https://api.deepseek.com/v1
+# model: deepseek-v4-flash
 # secretSource: custom
-
-# DeepSeek V4：日常角色聊天优先 flash
-model: deepseek-v4-flash
+# temperature: 0.9
+# maxOutputTokens: 1200
+# maxContextTokens: 64000
 
 # 角色聊天默认关闭思考，降低延迟；需要时可改为 enabled
 thinking: disabled
 
-# 生成与上下文预算
-temperature: 0.9
-maxOutputTokens: 1200
-maxContextTokens: 64000
 # 无精确 tokenizer 时的保守估算：平均每个 token 对应的字符数。
 # 中文角色扮演建议保持 3；调小会预留更多上下文安全余量。
 charsPerToken: 3

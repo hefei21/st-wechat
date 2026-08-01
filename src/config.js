@@ -1,11 +1,11 @@
 /**
  * config.js - SillyTavern 与插件配置加载
  *
- * 配置解析顺序：
- * 1. 读取 ST settings / OpenAI Settings 预设。
- * 2. 应用插件 config.yaml 覆盖。
- * 3. 根据最终 endpoint/model/source 推导 provider。
- * 4. 仅加载该 provider 对应的密钥。
+ * 配置解析规则：
+ * 1. auto 模式跟随 ST 当前来源、模型、生成参数和精确密钥槽。
+ * 2. override 模式使用 config.yaml 的完整连接与生成配置。
+ * 3. 根据最终 endpoint/model/source 推导传输适配器。
+ * 4. 密钥不跨槽位或服务商回退。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,6 +24,31 @@ const DEFAULT_LLM = Object.freeze({
     maxContextTokens: 64000,
     charsPerToken: 3,
     requestTimeoutMs: 90000,
+});
+const MAX_OUTPUT_TOKENS = 65536;
+const MAX_CONTEXT_TOKENS = 2000000;
+const SOURCE_PROFILES = Object.freeze({
+    openai: {
+        provider: 'openai', endpoint: 'https://api.openai.com/v1', modelKey: 'openai_model', secretSource: 'openai',
+    },
+    claude: {
+        provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1', modelKey: 'claude_model', secretSource: 'anthropic',
+    },
+    openrouter: {
+        provider: 'openrouter', endpoint: 'https://openrouter.ai/api/v1', modelKey: 'openrouter_model', secretSource: 'openrouter',
+    },
+    makersuite: {
+        provider: 'gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', modelKey: 'google_model', secretSource: 'gemini',
+    },
+    mistralai: {
+        provider: 'mistral', endpoint: 'https://api.mistral.ai/v1', modelKey: 'mistralai_model', secretSource: 'mistral',
+    },
+    groq: {
+        provider: 'groq', endpoint: 'https://api.groq.com/openai/v1', modelKey: 'groq_model', secretSource: 'groq',
+    },
+    deepseek: {
+        provider: 'deepseek', endpoint: 'https://api.deepseek.com', modelKey: 'deepseek_model', secretSource: 'deepseek',
+    },
 });
 
 let _cache = null;
@@ -188,44 +213,60 @@ export function detectProvider({ explicit, endpoint = '', model = '', source = '
 }
 
 export function buildLlmConfig({ pluginConfig = {}, preset = {}, settings = {}, secrets = {} }) {
-    const customSelected = settings.chat_completion_source === 'custom';
-    const endpoint = firstString(
-        pluginConfig.endpoint,
-        preset.endpoint,
-        customSelected ? settings.custom_url : '',
-        DEFAULT_LLM.endpoint
+    const configurationMode = enumValue(
+        pluginConfig.configurationMode,
+        ['auto', 'override'],
+        'auto'
     );
-    const model = firstString(
-        pluginConfig.model,
-        preset.model,
-        customSelected ? settings.custom_model : '',
-        DEFAULT_LLM.model
-    );
-    const provider = detectProvider({
-        explicit: pluginConfig.provider,
-        endpoint,
-        model,
-        source: preset.source || settings.chat_completion_source,
-    });
+    const connection = configurationMode === 'override'
+        ? resolveOverrideConnection(pluginConfig)
+        : resolveAutomaticConnection(settings, preset);
+    const generation = configurationMode === 'override'
+        ? {
+            temperature: firstFinite(pluginConfig.temperature, DEFAULT_LLM.temperature),
+            maxOutputTokens: boundedPositiveInteger(
+                MAX_OUTPUT_TOKENS,
+                pluginConfig.maxOutputTokens,
+                DEFAULT_LLM.maxOutputTokens
+            ),
+            maxContextTokens: boundedPositiveInteger(
+                MAX_CONTEXT_TOKENS,
+                pluginConfig.maxContextTokens,
+                DEFAULT_LLM.maxContextTokens
+            ),
+        }
+        : {
+            temperature: firstFinite(
+                settings.temp_openai,
+                settings.temperature,
+                DEFAULT_LLM.temperature
+            ),
+            maxOutputTokens: boundedPositiveInteger(
+                MAX_OUTPUT_TOKENS,
+                settings.openai_max_tokens,
+                settings.amount_gen,
+                DEFAULT_LLM.maxOutputTokens
+            ),
+            maxContextTokens: boundedPositiveInteger(
+                MAX_CONTEXT_TOKENS,
+                settings.openai_max_context,
+                preset.maxContext,
+                settings.max_context,
+                DEFAULT_LLM.maxContextTokens
+            ),
+        };
 
     return {
-        provider,
-        endpoint,
-        model,
-        apiKey: resolveSecret(secrets, provider, pluginConfig.secretSource),
-        temperature: firstFinite(pluginConfig.temperature, settings.temperature, DEFAULT_LLM.temperature),
+        configurationMode,
+        provider: connection.provider,
+        endpoint: connection.endpoint,
+        model: connection.model,
+        secretSource: connection.secretSource,
+        apiKey: resolveSecret(secrets, connection.provider, connection.secretSource),
+        temperature: generation.temperature,
         thinking: normalizeThinking(pluginConfig.thinking ?? DEFAULT_LLM.thinking),
-        maxOutputTokens: positiveInteger(
-            pluginConfig.maxOutputTokens,
-            settings.amount_gen,
-            DEFAULT_LLM.maxOutputTokens
-        ),
-        maxContextTokens: positiveInteger(
-            pluginConfig.maxContextTokens,
-            preset.maxContext,
-            settings.max_context,
-            DEFAULT_LLM.maxContextTokens
-        ),
+        maxOutputTokens: generation.maxOutputTokens,
+        maxContextTokens: generation.maxContextTokens,
         charsPerToken: positiveNumber(
             pluginConfig.charsPerToken,
             DEFAULT_LLM.charsPerToken
@@ -234,6 +275,56 @@ export function buildLlmConfig({ pluginConfig = {}, preset = {}, settings = {}, 
             pluginConfig.requestTimeoutMs,
             DEFAULT_LLM.requestTimeoutMs
         ),
+    };
+}
+
+function resolveAutomaticConnection(settings, preset) {
+    const source = firstString(
+        settings.chat_completion_source,
+        preset.source,
+        DEFAULT_LLM.provider
+    ).toLowerCase();
+
+    if (source === 'custom') {
+        const endpoint = firstString(settings.custom_url, preset.endpoint, DEFAULT_LLM.endpoint);
+        const model = firstString(settings.custom_model, preset.model, DEFAULT_LLM.model);
+        return {
+            provider: detectProvider({ endpoint, model, source }),
+            endpoint,
+            model,
+            secretSource: 'custom',
+        };
+    }
+
+    const profile = SOURCE_PROFILES[source];
+    const endpoint = firstString(profile?.endpoint, preset.endpoint, DEFAULT_LLM.endpoint);
+    const model = firstString(
+        profile?.modelKey ? settings[profile.modelKey] : '',
+        preset.model,
+        DEFAULT_LLM.model
+    );
+    const provider = profile?.provider || detectProvider({ endpoint, model, source });
+    return {
+        provider,
+        endpoint,
+        model,
+        secretSource: profile?.secretSource || normalizeProvider(source || provider),
+    };
+}
+
+function resolveOverrideConnection(pluginConfig) {
+    const provider = firstString(pluginConfig.provider);
+    const endpoint = firstString(pluginConfig.endpoint);
+    const model = firstString(pluginConfig.model);
+    if (!provider || !endpoint || !model) {
+        throw new Error('configurationMode: override 需要同时配置 provider、endpoint 和 model');
+    }
+    const normalizedProvider = detectProvider({ explicit: provider, endpoint, model });
+    return {
+        provider: normalizedProvider,
+        endpoint,
+        model,
+        secretSource: firstString(pluginConfig.secretSource, normalizedProvider),
     };
 }
 
@@ -306,7 +397,9 @@ function getActivePersona(settings) {
 
 function readOpenAIPreset(stDataDir, settings) {
     try {
-        const presetName = path.basename(String(settings.openai_settings || 'Default'));
+        const presetName = path.basename(String(
+            settings.preset_settings_openai || settings.openai_settings || 'Default'
+        ));
         const presetPath = path.join(stDataDir, 'OpenAI Settings', `${presetName}.json`);
         if (!fs.existsSync(presetPath)) return {};
 
@@ -370,6 +463,10 @@ function positiveInteger(...values) {
         if (Number.isFinite(number) && number > 0) return Math.floor(number);
     }
     return 1;
+}
+
+function boundedPositiveInteger(maximum, ...values) {
+    return Math.min(maximum, positiveInteger(...values));
 }
 
 function positiveNumber(...values) {
