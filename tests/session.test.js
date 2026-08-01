@@ -359,6 +359,65 @@ test('a browser report cannot consume a Bot write before its sync event is publi
     }
 });
 
+test('a browser sync poll cannot consume a Bot write before its direct event is published', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-poll-race-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.png',
+            data: { name: 'Alice', first_mes: 'hello' },
+        };
+        let manager;
+        manager = new SessionManager({
+            config: { chatsDir, dataRoot, syncMode: 'notify' },
+            chatStore,
+            characterProvider: () => [character],
+            generator: async (session, _userId, _characterId, message, _type, _extra, options) => {
+                await options.beforeWrite?.();
+                const written = await chatStore.appendExchangeQueued(session.chatPath, [
+                    { role: 'user', content: message, operationId: options.operationId },
+                    { role: 'assistant', content: 'wechat reply', operationId: options.operationId },
+                ], character.name);
+                const poll = await manager.getBrowserSyncState({
+                    characterRef: character.id,
+                    chatId: path.basename(chat.path),
+                    revision: '',
+                });
+                assert.equal(poll.deferred, true);
+                await options.onWrite?.(written);
+                return 'wechat reply';
+            },
+        });
+        await manager.cmdSwitch('owner', character.id);
+        manager.registry.setBotSelection(character.id, chat.path);
+        manager.registry.setBrowserSelection(character.id, chat.path);
+        await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'state',
+        });
+
+        assert.equal(
+            await manager.handleChat('owner', 'wechat question', { operationId: 'poll-race' }),
+            'wechat reply'
+        );
+        const updates = manager.syncEvents.list(chat.path);
+        assert.equal(updates.length, 1);
+        assert.deepEqual(updates[0].messages.map(message => message.content), [
+            'wechat question',
+            'wechat reply',
+        ]);
+        manager.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test('browser reports do not echo WeChat projection records back to the Bot', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-projection-'));
     try {

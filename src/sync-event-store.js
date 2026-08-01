@@ -32,9 +32,6 @@ export class SyncEventStore {
             })),
         };
         this.state.events.push(event);
-        if (this.state.events.length > this.maxEvents) {
-            this.state.events.splice(0, this.state.events.length - this.maxEvents);
-        }
         this.dirty = true;
         this.flush();
         return event;
@@ -53,12 +50,6 @@ export class SyncEventStore {
             event: String(batch.event || ''),
         };
         this.state.browserNotifications.push(event);
-        if (this.state.browserNotifications.length > this.maxEvents) {
-            this.state.browserNotifications.splice(
-                0,
-                this.state.browserNotifications.length - this.maxEvents
-            );
-        }
         this.dirty = true;
         this.flush();
         return event;
@@ -128,13 +119,13 @@ export class SyncEventStore {
                     typeof event?.id === 'string'
                     && typeof event?.chatPath === 'string'
                     && Array.isArray(event?.messages)
-                ).slice(-this.maxEvents),
+                ),
                 browserNotifications: Array.isArray(parsed.browserNotifications)
                     ? parsed.browserNotifications.filter(event =>
                         typeof event?.id === 'string'
                         && typeof event?.chatPath === 'string'
                         && Array.isArray(event?.messages)
-                    ).slice(-this.maxEvents)
+                    )
                     : [],
             };
         } catch (error) {

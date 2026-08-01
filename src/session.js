@@ -117,6 +117,7 @@ export class SessionManager {
         return this.coordinator.run(cs.chatPath, async ({ prepareWrite }) => {
             const startedAt = Date.now();
             let generationAttempted = false;
+            let writerPublished = false;
             console.log(`[Session] 生成事务开始: type=${type}, queueWaitMs=${startedAt - queuedAt}`);
             try {
                 this.observeChat(cs.chatPath);
@@ -152,12 +153,23 @@ export class SessionManager {
                     {
                         ...options,
                         beforeWrite: prepareWrite,
+                        onWrite: writtenMessages => {
+                            const update = this.observeChat(cs.chatPath, { source: 'wechat' });
+                            if (writtenMessages.length > 0) {
+                                this.queueWechatBrowserUpdate(
+                                    cs.chatPath,
+                                    writtenMessages,
+                                    update.revision
+                                );
+                                writerPublished = true;
+                            }
+                        },
                         signal,
                         onUsage: usage => this.metrics?.usage(usage),
                     }
                 ));
                 const update = this.observeChat(cs.chatPath, { source: 'wechat' });
-                if (update.addedMessages.length > 0) {
+                if (!writerPublished && update.addedMessages.length > 0) {
                     this.queueWechatBrowserUpdate(cs.chatPath, update.addedMessages, update.revision);
                 }
                 this.metrics?.increment('generationsSucceeded');
@@ -672,9 +684,21 @@ export class SessionManager {
         if (!character) return { changed: false, updates: [] };
         const chatPath = this.chatStore.resolveChatPathById(characterChatDirectory(character), chatId);
         if (!chatPath) return { changed: false, updates: [] };
+        this.registry.setBrowserSelection(character.id, chatPath);
+        if (this.coordinator.isActive(chatPath)) {
+            const checkpoint = this.registry.getChatState(chatPath);
+            const currentRevision = checkpoint?.revision || String(revision || '');
+            return {
+                changed: false,
+                revision: currentRevision,
+                sameCurrent: this.registry.isSameCurrentChat(character.id),
+                changeSource: checkpoint?.source || null,
+                updates: this.syncEvents.list(chatPath),
+                deferred: true,
+            };
+        }
         const update = await this.observeChatAsync(chatPath, { lastEvent: 'poll' });
         const currentRevision = update.revision;
-        this.registry.setBrowserSelection(character.id, chatPath);
         const chatState = this.registry.getChatState(chatPath);
         return {
             changed: String(revision || '') !== currentRevision,

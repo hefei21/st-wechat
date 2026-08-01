@@ -50,3 +50,23 @@ test('wechat increments already loaded from JSONL are acknowledged without dupli
     assert.deepEqual(result.updateIds, ['wechat-1']);
     assert.equal(context.chat.length, 2);
 });
+
+test('a rendering failure rolls back the complete staged WeChat batch', async () => {
+    const context = {
+        chat: [{ name: 'Alice', is_user: false, mes: 'existing', send_date: 1 }],
+        addOneMessage: message => {
+            if (!message.is_user) throw new Error('render failed');
+        },
+    };
+    await assert.rejects(
+        mergeWechatUpdates(context, [{
+            id: 'wechat-failure',
+            messages: [
+                { role: 'user', content: 'question' },
+                { role: 'assistant', content: 'reply' },
+            ],
+        }]),
+        /render failed/
+    );
+    assert.deepEqual(context.chat.map(message => message.mes), ['existing']);
+});

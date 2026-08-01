@@ -158,16 +158,18 @@ export async function generate(cs, userId, characterRef, message, type, extra = 
         await options.beforeWrite?.();
         const charNameForKey = char.data?.name || char.name;
         if (type !== 'impersonate') {
-            await chatStore.appendExchangeQueued(cs.chatPath, [
+            const writtenMessages = await chatStore.appendExchangeQueued(cs.chatPath, [
                 { role: 'user', content: message, operationId: options.operationId },
                 { role: 'assistant', content: reply, operationId: options.operationId },
             ], charNameForKey);
+            await options.onWrite?.(writtenMessages);
         } else {
-            await chatStore.appendExchangeQueued(
+            const writtenMessages = await chatStore.appendExchangeQueued(
                 cs.chatPath,
                 [{ role: 'user', content: reply }],
                 charNameForKey
             );
+            await options.onWrite?.(writtenMessages);
         }
     }
 

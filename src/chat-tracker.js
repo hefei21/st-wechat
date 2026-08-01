@@ -59,6 +59,8 @@ export class ChatTracker {
         if (!previous) {
             const content = await fs.promises.readFile(resolved, 'utf8');
             const state = trackerState(stat, revision, lastMessageFingerprint(content));
+            const concurrent = this.concurrentState(resolved, previous);
+            if (concurrent) return trackerUpdate(concurrent);
             this.states.set(resolved, state);
             return trackerUpdate(state, { initialized: true });
         }
@@ -70,6 +72,8 @@ export class ChatTracker {
         if (stat.size < previous.size || (stat.size === previous.size && stat.mtimeMs !== previous.mtimeMs)) {
             const content = await fs.promises.readFile(resolved, 'utf8');
             const state = trackerState(stat, revision, lastMessageFingerprint(content));
+            const concurrent = this.concurrentState(resolved, previous);
+            if (concurrent) return trackerUpdate(concurrent);
             this.states.set(resolved, state);
             return trackerUpdate(state, { reset: true });
         }
@@ -79,6 +83,8 @@ export class ChatTracker {
             const tailStart = Math.max(0, stat.size - 65536);
             const content = await readRangeAsync(resolved, tailStart, stat.size - tailStart);
             const state = trackerState(stat, revision, lastMessageFingerprint(content));
+            const concurrent = this.concurrentState(resolved, previous);
+            if (concurrent) return trackerUpdate(concurrent);
             this.states.set(resolved, state);
             return trackerUpdate(state, { reset: true, overflow: true });
         }
@@ -88,8 +94,15 @@ export class ChatTracker {
             ? messageFingerprint(addedMessages.at(-1)._raw)
             : previous.lastMessageFingerprint;
         const state = trackerState(stat, revision, fingerprint);
+        const concurrent = this.concurrentState(resolved, previous);
+        if (concurrent) return trackerUpdate(concurrent);
         this.states.set(resolved, state);
         return trackerUpdate(state, { addedMessages });
+    }
+
+    concurrentState(resolved, previous) {
+        const latest = this.states.get(resolved);
+        return latest && latest !== previous ? latest : null;
     }
 
     forget(filePath) {

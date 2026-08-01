@@ -77,3 +77,26 @@ test('large offline gaps advance the cursor without replaying all content', asyn
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+
+test('overlapping async observations cannot move the shared cursor backwards', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-tracker-overlap-'));
+    try {
+        const filePath = path.join(directory, 'chat.jsonl');
+        fs.writeFileSync(filePath, '{"name":"Alice"}\n');
+        const tracker = new ChatTracker();
+        tracker.observe(filePath);
+        fs.appendFileSync(filePath, '{"is_user":true,"mes":"once","send_date":2}\n');
+
+        const [first, second] = await Promise.all([
+            tracker.observeAsync(filePath),
+            tracker.observeAsync(filePath),
+        ]);
+        assert.equal(
+            [first, second].filter(update => update.addedMessages.length === 1).length,
+            1
+        );
+        assert.deepEqual(tracker.observe(filePath).addedMessages, []);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});

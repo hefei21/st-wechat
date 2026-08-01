@@ -140,7 +140,7 @@ export class ChatStore {
 
     appendExchange(filePath, messages, characterName) {
         const safePath = this.assertInsideChats(filePath);
-        const lines = messages.map(message => JSON.stringify({
+        const records = messages.map(message => ({
             name: message.role === 'user' ? 'You' : characterName,
             is_user: message.role === 'user',
             mes: String(message.content ?? ''),
@@ -149,7 +149,16 @@ export class ChatStore {
                 ? { st_wechat_operation_id: String(message.operationId) }
                 : {}),
         }));
-        fs.appendFileSync(safePath, `${lines.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+        fs.appendFileSync(safePath, `${records.map(JSON.stringify).join('\n')}\n`, {
+            encoding: 'utf8',
+            mode: 0o600,
+        });
+        return records.map(record => ({
+            role: record.is_user ? 'user' : 'assistant',
+            content: record.mes,
+            name: record.name,
+            _raw: record,
+        }));
     }
 
     findOperationResult(filePath, operationId) {
@@ -164,9 +173,9 @@ export class ChatStore {
     }
 
     appendExchangeQueued(filePath, messages, characterName) {
-        return this.enqueueWrite(filePath, () => {
-            this.appendExchange(filePath, messages, characterName);
-        });
+        return this.enqueueWrite(filePath, () =>
+            this.appendExchange(filePath, messages, characterName)
+        );
     }
 
     enqueueWrite(filePath, operation) {

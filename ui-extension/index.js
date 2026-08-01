@@ -35,6 +35,7 @@ let generationFinishPromise = null;
 let generationStartPromise = null;
 let lastGenerationActivityAt = 0;
 let pendingAutomaticMerge = false;
+let browserSyncPromise = null;
 
 async function init() {
     if (initialized) return;
@@ -285,6 +286,16 @@ async function reportBrowserState(event, operationId = null, options = {}) {
 }
 
 async function checkBrowserSync() {
+    if (browserSyncPromise) return browserSyncPromise;
+    browserSyncPromise = checkBrowserSyncOnce();
+    try {
+        return await browserSyncPromise;
+    } finally {
+        browserSyncPromise = null;
+    }
+}
+
+async function checkBrowserSyncOnce() {
     const current = currentBrowserChat();
     if (!current) return;
     try {

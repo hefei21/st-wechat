@@ -92,3 +92,35 @@ test('browser notifications survive restart until they are acknowledged', () => 
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+
+test('unacknowledged events are never discarded by the retention hint', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-sync-retention-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const chatPath = path.join(chatsDir, 'Alice', 'chat.jsonl');
+        const storePath = path.join(directory, 'sync-events.json');
+        fs.mkdirSync(path.dirname(chatPath), { recursive: true });
+        fs.writeFileSync(chatPath, '{}\n');
+        const store = new SyncEventStore(storePath, chatsDir, {
+            maxEvents: 2,
+            randomUUID: (() => {
+                let index = 0;
+                return () => `event-${++index}`;
+            })(),
+        });
+        for (let index = 0; index < 3; index++) {
+            store.append(chatPath, [{ role: 'user', content: `message-${index}` }]);
+            store.appendBrowserNotification(chatPath, {
+                messages: [{ role: 'assistant', content: `reply-${index}` }],
+            });
+        }
+        store.close();
+
+        const restored = new SyncEventStore(storePath, chatsDir, { maxEvents: 2 });
+        assert.equal(restored.list(chatPath).length, 3);
+        assert.equal(restored.listBrowserNotifications().length, 3);
+        restored.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});

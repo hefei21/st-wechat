@@ -7,7 +7,7 @@ export async function mergeWechatUpdates(context, updates = []) {
     const chat = Array.isArray(context?.chat) ? context.chat : null;
     if (!chat) return { added: 0, updateIds: [] };
 
-    let added = 0;
+    const staged = [];
     const updateIds = [];
     for (const update of updates) {
         if (!update?.id || !Array.isArray(update.messages)) continue;
@@ -29,12 +29,22 @@ export async function mergeWechatUpdates(context, updates = []) {
                     st_wechat_sync_id: syncId,
                 },
             };
-            chat.push(message);
-            await context.addOneMessage?.(message);
-            added += 1;
+            staged.push(message);
         }
     }
-    return { added, updateIds };
+    if (staged.length === 0) return { added: 0, updateIds };
+
+    const startIndex = chat.length;
+    chat.push(...staged);
+    try {
+        for (const message of staged) {
+            await context.addOneMessage?.(message);
+        }
+    } catch (error) {
+        chat.splice(startIndex, staged.length);
+        throw error;
+    }
+    return { added: staged.length, updateIds };
 }
 
 function isSameMessage(message, source, syncId) {
