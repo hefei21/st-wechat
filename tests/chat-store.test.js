@@ -62,6 +62,41 @@ test('metadata update preserves system, unknown, and message lines', () => withT
     assert.match(raw, /"mes":"你好"/);
 }));
 
+test('SillyTavern memory extension summary takes precedence over legacy metadata', () => withTempStore((store) => {
+    const chat = store.createShared('测试角色');
+    store.updateMetadata(chat.path, { summary: '旧版记忆' });
+    fs.appendFileSync(chat.path, [
+        '{"name":"You","is_user":true,"mes":"问题","extra":{"memory":"酒馆总结"}}',
+        '{"name":"测试角色","is_user":false,"mes":"回答"}',
+        '',
+    ].join('\n'));
+
+    assert.equal(store.parse(chat.path).summary, '酒馆总结');
+}));
+
+test('memory updates use SillyTavern extra.memory on the pre-last message', () => withTempStore((store) => {
+    const chat = store.createShared('测试角色');
+    store.appendExchange(chat.path, [
+        { role: 'user', content: '问题' },
+        { role: 'assistant', content: '回答' },
+    ], '测试角色');
+
+    assert.deepEqual(store.updateSillyTavernMemory(chat.path, '同步总结'), {
+        messageIndex: 0,
+        summary: '同步总结',
+    });
+    const parsed = store.parse(chat.path);
+    assert.equal(parsed.summary, '同步总结');
+    assert.equal(parsed.messages[0]._raw.extra.memory, '同步总结');
+    assert.equal(parsed.metadata.summary, '');
+}));
+
+test('memory update refuses chats without a pre-last message', () => withTempStore((store) => {
+    const chat = store.createShared('测试角色');
+    store.appendMessage(chat.path, 'assistant', '开场白', '测试角色');
+    assert.equal(store.updateSillyTavernMemory(chat.path, '不能保存'), null);
+}));
+
 test('replaceLastAssistant preserves system records and swipes', () => withTempStore((store) => {
     const chat = store.createShared('测试角色');
     fs.appendFileSync(chat.path, [

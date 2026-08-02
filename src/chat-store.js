@@ -131,7 +131,17 @@ export class ChatStore {
                 firstRecord = false;
             }
         }
-        return { path: safePath, metadata, messages, summary };
+        const extensionSummary = findLatestSillyTavernMemory(messages);
+        return {
+            path: safePath,
+            metadata,
+            messages,
+            // SillyTavern's built-in Summarize extension stores the active
+            // summary on a chat message as `extra.memory`.  The old top-level
+            // metadata field remains a read-only fallback for chats created by
+            // earlier ST WeChat builds.
+            summary: extensionSummary ?? summary,
+        };
     }
 
     appendMessage(filePath, role, content, characterName) {
@@ -304,6 +314,37 @@ export class ChatStore {
         ]);
     }
 
+    updateSillyTavernMemory(filePath, value) {
+        const safePath = this.assertInsideChats(filePath);
+        const lines = readRawLines(safePath);
+        const messageLines = [];
+
+        for (let index = 0; index < lines.length; index++) {
+            try {
+                const record = JSON.parse(lines[index]);
+                if (!record?.is_system && typeof record?.mes === 'string') {
+                    messageLines.push({ index, record });
+                }
+            } catch {}
+        }
+
+        // Match SillyTavern 1.16.x: setMemoryContext saves to the pre-last
+        // chat message because the last message is excluded from summary
+        // discovery and summarization input.
+        if (messageLines.length < 2) return null;
+        const target = messageLines.at(-2);
+        target.record.extra = target.record.extra && typeof target.record.extra === 'object'
+            ? target.record.extra
+            : {};
+        target.record.extra.memory = String(value ?? '');
+        lines[target.index] = JSON.stringify(target.record);
+        this.atomicWriteLines(safePath, lines);
+        return {
+            messageIndex: messageLines.length - 2,
+            summary: target.record.extra.memory,
+        };
+    }
+
     resolveCharacterDir(characterName) {
         return this.assertInsideChats(path.join(this.chatsDir, safeCharacterDirectoryName(characterName)));
     }
@@ -344,6 +385,15 @@ export class ChatStore {
         }
         fs.renameSync(tempPath, safePath);
     }
+}
+
+function findLatestSillyTavernMemory(messages) {
+    if (!Array.isArray(messages) || messages.length < 2) return null;
+    for (let index = messages.length - 2; index >= 0; index--) {
+        const memory = messages[index]?._raw?.extra?.memory;
+        if (typeof memory === 'string' && memory.length > 0) return memory;
+    }
+    return null;
 }
 
 export function safeCharacterDirectoryName(name) {

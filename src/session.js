@@ -540,7 +540,7 @@ export class SessionManager {
         cs.chatPath = chat.path;
         this.registry.setBotSelection(character.id, chat.path);
 
-        if (chat.summary) cs.summary = chat.summary;
+        cs.summary = chat.summary;
         if (chat.messages.length > 0) {
             cs.history = chat.messages;
             cs.lastWritten = chat.messages.length;
@@ -1014,12 +1014,16 @@ export class SessionManager {
         if (!restored.session || restored.notice) return restored.notice || '请先选择角色';
         const cs = restored.session;
         if (!text) return '请提供记忆内容，如 /memory 主角和Alice在咖啡馆相遇';
-        await this.coordinator.run(cs.chatPath, async ({ assertUnchanged }) => {
+        const updated = await this.coordinator.run(cs.chatPath, async ({ assertUnchanged }) => {
             assertUnchanged();
-            this.chatStore.updateMetadata(cs.chatPath, { summary: text });
+            const result = this.chatStore.updateSillyTavernMemory(cs.chatPath, text);
+            if (!result) return false;
             cs.summary = text;
-            this.observeChat(cs.chatPath, { source: 'wechat' });
+            const tracked = this.observeChat(cs.chatPath, { source: 'wechat' });
+            this.queueWechatBrowserReload(cs.chatPath, tracked.revision, 'memory');
+            return true;
         });
+        if (!updated) return '当前聊天记录不足，至少完成一轮对话后才能设置酒馆总结';
         return `✅ 记忆已保存：\n${text}`;
     }
 

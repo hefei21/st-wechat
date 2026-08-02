@@ -399,6 +399,13 @@ test('stateful read commands lazily restore the selected role after restart', as
         assert.match(await restarted.cmdSetMemory('owner', '重启后更新记忆'), /记忆已保存/);
         assert.match(restarted.cmdGetMemory('owner'), /重启后更新记忆/);
         assert.equal(new ChatStore(chatsDir).parse(chat.path).summary, '重启后更新记忆');
+        assert.equal(
+            new ChatStore(chatsDir).parse(chat.path).messages[0]._raw.extra.memory,
+            '重启后更新记忆'
+        );
+        const memoryReload = restarted.syncEvents.list(chat.path).at(-1);
+        assert.equal(memoryReload.action, 'reload');
+        assert.equal(memoryReload.reason, 'memory');
         restarted.close();
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });

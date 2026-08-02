@@ -80,7 +80,7 @@ export async function generate(cs, userId, characterRef, message, type, extra = 
         const chat = chatStore.findLatestAny(chatDirectory)
             || chatStore.createShared(chatDirectory, char.name);
         cs.chatPath = chat.path;
-        if (chat.summary && !cs.summary) cs.summary = chat.summary;
+        cs.summary = chat.summary;
         if (chat.messages.length > 0 && cs.history.length === 0) {
             cs.history = chat.messages;
         }
@@ -92,7 +92,7 @@ export async function generate(cs, userId, characterRef, message, type, extra = 
     // 将这些新消息合并到内存 history 中。
     try {
         const parsed = chatStore.parse(cs.chatPath);
-        if (parsed.summary) cs.summary = parsed.summary;
+        cs.summary = parsed.summary;
 
         // 文件中的消息数量 > 内存中已知的 → 有外部新增
         const fileMessages = parsed.messages;
