@@ -109,7 +109,7 @@ enableServerPlugins: true
 修改的是 SillyTavern 根目录中的配置，不是插件自己的 `config.yaml`。修改后需要重启
 SillyTavern。
 
-### 4. Docker 用户确认四个持久化目录
+### 4. 确认前端扩展目录
 
 如果使用 Docker，至少确认以下四个容器目录均已持久化：
 
@@ -123,6 +123,17 @@ volumes:
 
 可以直接参考 [`deploy/production/compose.yml`](deploy/production/compose.yml)。已有部署使用
 绝对路径或命名卷时无需搬迁，只需确保四个容器目标一致且可写。
+
+非 Docker 用户不需要配置上述挂载。请确认 SillyTavern 安装目录下存在或允许程序创建：
+
+```text
+public/scripts/extensions/third-party/
+```
+
+插件启动时会递归创建缺失的 `third-party/st-wechat/` 目录，并把随插件提供的浏览器扩展复制
+进去；通常无需提前手动创建。如果目录没有自动生成，请手动创建上述路径，并确认运行
+SillyTavern 的系统账号对该目录具有读写权限。启动日志出现
+`UI 扩展已部署: .../public/scripts/extensions/third-party/st-wechat` 才表示前端部署成功。
 
 ### 5. 重启酒馆
 

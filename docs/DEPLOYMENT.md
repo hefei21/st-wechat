@@ -42,8 +42,11 @@ sillytavern/
    `config.yaml`、`src/` 和 `ui-extension/`，没有 `st-wechat/st-wechat/` 双层目录。
 3. Docker 用户确认四个持久化挂载完整，尤其是
    `/home/node/app/public/scripts/extensions/third-party`；插件启动时会把浏览器扩展部署到这里。
+   非 Docker 用户无需配置挂载；插件会在 SillyTavern 安装目录下递归创建
+   `public/scripts/extensions/third-party/st-wechat/` 并复制前端文件。若目录未自动生成，请手动
+   创建 `public/scripts/extensions/third-party/`，并确保运行 SillyTavern 的系统账号具有读写权限。
 4. 启动或重启 SillyTavern，确认日志只有一个 `st-wechat` 插件实例且没有
-   `plugin ID is already in use`。
+   `plugin ID is already in use`，同时出现 `UI 扩展已部署: .../third-party/st-wechat`。
 5. 打开「扩展」→ **ST WeChat Bot**，扫码登录并用准备长期使用的微信账号发送面板显示的
    `/claim 六位码`。
 

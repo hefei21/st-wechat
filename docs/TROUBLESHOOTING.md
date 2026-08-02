@@ -18,6 +18,15 @@ userId、真实聊天正文或 Docker 主机内部绝对路径。
 备份目录，只保留一个 `plugins/st-wechat/`，然后重新启动。不要通过删除唯一旧版来处理，
 回滚副本应保存在不被插件扫描的位置。
 
+## 扩展列表中没有 ST WeChat Bot
+
+1. 检查启动日志是否出现 `UI 扩展已部署: .../public/scripts/extensions/third-party/st-wechat`。
+2. 如果出现 `UI 扩展部署失败`，确认运行 SillyTavern 的系统账号可以写入
+   `public/scripts/extensions/third-party/`。非 Docker 安装若没有该路径，可手动逐层创建。
+3. Docker 安装确认该目录已正确挂载且容器内可写；非 Docker 安装无需配置挂载。
+4. 修复目录或权限后重启 SillyTavern，再强制刷新浏览器。只有复制前端文件成功，扩展面板
+   才会出现；仅加载服务端插件还不够。
+
 ## 局域网访问 Forbidden
 
 这是 SillyTavern 白名单，不是插件错误。把浏览器实际来源 IP 或可信子网加入 ST 白名单；
