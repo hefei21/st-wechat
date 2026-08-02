@@ -79,6 +79,33 @@ test('replaceLastAssistant preserves system records and swipes', () => withTempS
     assert.match(raw, /"mes":"new","swipes":\["old","new"\],"swipe_id":1/);
 }));
 
+test('appendToLastAssistant extends only the selected swipe and preserves other records', () => withTempStore((store) => {
+    const chat = store.createShared('测试角色');
+    fs.appendFileSync(chat.path, [
+        '{"name":"System","is_system":true,"mes":"keep"}',
+        'unknown-line',
+        '{"name":"You","is_user":true,"mes":"question"}',
+        '{"name":"测试角色","is_user":false,"mes":"selected","swipes":["first","selected"],"swipe_id":1,"extra":{"keep":true}}',
+        '',
+    ].join('\n'));
+
+    assert.deepEqual(
+        store.appendToLastAssistant(chat.path, ' continued'),
+        {
+            content: 'selected continued',
+            swipes: ['first', 'selected continued'],
+            swipeId: 1,
+        }
+    );
+    const raw = fs.readFileSync(chat.path, 'utf8');
+    assert.match(raw, /"is_system":true/);
+    assert.match(raw, /unknown-line/);
+    assert.match(raw, /"extra":\{"keep":true\}/);
+    const parsed = store.parse(chat.path);
+    assert.equal(parsed.messages.length, 2);
+    assert.equal(parsed.messages.at(-1).content, 'selected continued');
+}));
+
 test('unsafe character names remain inside chats root', () => withTempStore((store, root) => {
     const safe = safeCharacterDirectoryName('../evil/name');
     assert.doesNotMatch(safe, /[\\/]/);

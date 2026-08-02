@@ -156,3 +156,29 @@ test('continue and impersonate preserve the configured context budget', () => {
     assert.equal(continued.messages.some(message => message.content === '旧'.repeat(100)), false);
     assert.equal(impersonated.messages.some(message => message.content === '旧'.repeat(100)), false);
 });
+
+test('continue keeps the last assistant once and adds only an ephemeral direction', () => {
+    const continued = buildContinueMessages({
+        char: { data: { name: '测试角色' } },
+        persona: null,
+        username: 'User',
+        prompts: {},
+        history: [
+            { role: 'user', content: '问题' },
+            { role: 'assistant', content: '最近回答' },
+        ],
+        direction: '继续',
+        worldBook: null,
+        summary: '',
+        maxContextTokens: 1000,
+        maxOutputTokens: 100,
+        charsPerToken: 2,
+    });
+    assert.equal(
+        continued.messages.filter(message => message.content === '最近回答').length,
+        1
+    );
+    assert.equal(continued.messages.at(-1).role, 'user');
+    assert.match(continued.messages.at(-1).content, /续写方向：继续/);
+    assert.doesNotMatch(continued.messages.at(-1).content, /最近回答/);
+});

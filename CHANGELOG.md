@@ -29,6 +29,11 @@
 - 修复 `/retry` 与 `/swipe` 已改写 JSONL 但浏览器仍按追加消息处理的问题；现在通过持久化
   reload 事件刷新同一聊天，并保留 swipes 与 `swipe_id`。
 - 修复容器重启后必须先完成一轮对话，`/status` 才能恢复当前角色和聊天的问题。
+- 修复容器重启后 `/memory`、`/chats`、`/chat`、`/continue`、`/retry` 和 `/swipe`
+  不能立即恢复当前角色会话的问题。
+- 修复 `/continue` 生成合成 user 记录并另起回复的问题；现在只原位续写最后一条角色回复，
+  保留当前 swipe，不增加对话轮次，并让浏览器重载相同 chatId。
+- 明确 `/sync` 仅用于补取尚未成功推送的浏览器更新；`syncMode: off` 不再保留手动同步队列。
 - 修复 iLink 恢复凭据时额外短轮询干扰主长轮询、立即重试创建重复轮询和协议响应
   Content-Type 不标准导致误判的问题。
 - 修复无关世界书混入、关键词条目不激活、depth 计算及常用 secondary/probability/scan depth

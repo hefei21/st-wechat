@@ -359,6 +359,52 @@ test('a browser report cannot consume a Bot write before its sync event is publi
     }
 });
 
+test('stateful read commands lazily restore the selected role after restart', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-command-restore-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        chatStore.appendExchange(chat.path, [
+            { role: 'user', content: '旧问题' },
+            { role: 'assistant', content: '旧回答' },
+        ], 'Alice');
+        chatStore.updateMetadata(chat.path, { summary: '已保存记忆' });
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.json',
+            data: { name: 'Alice', first_mes: '你好' },
+        };
+        const registryPath = path.join(dataRoot, 'st-wechat', 'chat-registry.json');
+        const first = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore,
+            registry: new ChatRegistry(registryPath, chatsDir),
+            characterProvider: () => [character],
+        });
+        await first.cmdSwitch('owner', character.id);
+        first.close();
+
+        const restarted = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore: new ChatStore(chatsDir),
+            registry: new ChatRegistry(registryPath, chatsDir),
+            characterProvider: () => [character],
+        });
+        assert.match(restarted.cmdGetMemory('owner'), /已保存记忆/);
+        assert.match(restarted.cmdChats('owner'), /← 当前/);
+        assert.match(restarted.cmdChat('owner', '1'), /已切换聊天/);
+        assert.match(await restarted.cmdSetMemory('owner', '重启后更新记忆'), /记忆已保存/);
+        assert.match(restarted.cmdGetMemory('owner'), /重启后更新记忆/);
+        assert.equal(new ChatStore(chatsDir).parse(chat.path).summary, '重启后更新记忆');
+        restarted.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test('a stale browser revision cannot acquire a generation lease', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-stale-browser-'));
     try {
@@ -1202,10 +1248,85 @@ test('swipe selection is persisted in JSONL and restored after restart', async (
             registry: new ChatRegistry(registryPath, chatsDir),
             characterProvider: () => [character],
         });
-        const restored = restarted.ensureCharSession('owner');
-        assert.equal(restored.swipeIndex, 1);
+        assert.equal(restarted.getCharSession('owner'), null);
+        assert.match(await restarted.cmdSwipe('owner'), /回答一/);
+        const restored = restarted.getCharSession('owner');
+        assert.equal(restored.swipeIndex, 0);
         assert.deepEqual(restored.alternatives, ['回答一', '回答二']);
-        assert.equal(restored.history.at(-1).content, '回答二');
+        assert.equal(restored.history.at(-1).content, '回答一');
+        restarted.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('continue lazily restores after restart and extends the last assistant in place', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-continue-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        fs.appendFileSync(chat.path, [
+            '{"name":"You","is_user":true,"mes":"question","send_date":1}',
+            '{"name":"Alice","is_user":false,"mes":"old reply","send_date":2,"swipes":["other","old reply"],"swipe_id":1}',
+            '',
+        ].join('\n'));
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.json',
+            data: { name: 'Alice', first_mes: 'hello' },
+        };
+        const registryPath = path.join(dataRoot, 'st-wechat', 'chat-registry.json');
+        const first = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore,
+            registry: new ChatRegistry(registryPath, chatsDir),
+            characterProvider: () => [character],
+        });
+        await first.cmdSwitch('owner', character.id);
+        first.close();
+
+        let generationCall;
+        const restartedStore = new ChatStore(chatsDir);
+        const restarted = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore: restartedStore,
+            registry: new ChatRegistry(registryPath, chatsDir),
+            characterProvider: () => [character],
+            generator: async (session, _userId, _characterId, message, type, extra, options) => {
+                generationCall = {
+                    lastHistoryContent: session.history.at(-1)?.content,
+                    message,
+                    type,
+                    extra,
+                    options,
+                };
+                return ' continued';
+            },
+        });
+
+        const reply = await restarted.cmdContinue('owner', 'more detail');
+
+        assert.match(reply, /continued/);
+        assert.equal(generationCall.message, '');
+        assert.equal(generationCall.type, 'continue');
+        assert.equal(generationCall.extra.direction, 'more detail');
+        assert.equal(generationCall.options.noWrite, true);
+        assert.equal(generationCall.lastHistoryContent, 'old reply');
+        const parsed = restartedStore.parse(chat.path);
+        assert.deepEqual(
+            parsed.messages.map(message => [message.role, message.content]),
+            [['user', 'question'], ['assistant', 'old reply continued']]
+        );
+        assert.equal(countUserTurns(parsed.messages), 1);
+        assert.deepEqual(parsed.messages.at(-1)._raw.swipes, ['other', 'old reply continued']);
+        assert.equal(parsed.messages.at(-1)._raw.swipe_id, 1);
+        const [reloadEvent] = restarted.syncEvents.list(chat.path);
+        assert.equal(reloadEvent.action, 'reload');
+        assert.equal(reloadEvent.reason, 'continue');
+        assert.deepEqual(reloadEvent.messages, []);
         restarted.close();
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
@@ -1229,24 +1350,91 @@ test('retry persists the replacement and asks the browser to reload the same cha
             file: 'Alice.json',
             data: { name: 'Alice', first_mes: 'hello' },
         };
-        const manager = new SessionManager({
+        const registryPath = path.join(dataRoot, 'st-wechat', 'chat-registry.json');
+        const first = new SessionManager({
             config: { chatsDir, dataRoot },
             chatStore,
+            registry: new ChatRegistry(registryPath, chatsDir),
+            characterProvider: () => [character],
+        });
+        await first.cmdSwitch('owner', character.id);
+        first.close();
+
+        const restartedStore = new ChatStore(chatsDir);
+        const manager = new SessionManager({
+            config: { chatsDir, dataRoot },
+            chatStore: restartedStore,
+            registry: new ChatRegistry(registryPath, chatsDir),
             characterProvider: () => [character],
             generator: async () => 'new reply',
         });
-        await manager.cmdSwitch('owner', character.id);
+        assert.equal(manager.getCharSession('owner'), null);
 
         const reply = await manager.cmdRetry('owner');
 
         assert.match(reply, /new reply/);
-        const restored = chatStore.parse(chat.path);
+        const restored = restartedStore.parse(chat.path);
         assert.equal(restored.messages.at(-1).content, 'new reply');
         assert.deepEqual(restored.messages.at(-1)._raw.swipes, ['old reply', 'new reply']);
         const [reloadEvent] = manager.syncEvents.list(chat.path);
         assert.equal(reloadEvent.action, 'reload');
         assert.equal(reloadEvent.reason, 'retry');
         assert.deepEqual(reloadEvent.messages, []);
+        manager.close();
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('syncMode off drops browser notification events instead of building a manual queue', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'st-wechat-session-sync-off-'));
+    try {
+        const chatsDir = path.join(directory, 'chats');
+        const dataRoot = path.join(directory, 'data');
+        const chatStore = new ChatStore(chatsDir);
+        const chat = chatStore.createShared('Alice');
+        const character = {
+            id: 'char_alice',
+            name: 'Alice',
+            file: 'Alice.json',
+            data: { name: 'Alice', first_mes: 'hello' },
+        };
+        const seeder = new SessionManager({
+            config: { chatsDir, dataRoot, syncMode: 'notify' },
+            chatStore,
+            characterProvider: () => [character],
+        });
+        seeder.queueBrowserNotification(chat.path, character.name, [
+            { role: 'user', content: 'old pending question' },
+            { role: 'assistant', content: 'old pending reply' },
+        ], false, false, 'generation-finished');
+        assert.equal(seeder.syncEvents.listBrowserNotifications().length, 1);
+        seeder.close();
+
+        const manager = new SessionManager({
+            config: { chatsDir, dataRoot, syncMode: 'off' },
+            chatStore,
+            characterProvider: () => [character],
+        });
+        manager.registry.setBotSelection(character.id, chat.path);
+        await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'state',
+        });
+        chatStore.appendExchange(chat.path, [
+            { role: 'user', content: 'browser question' },
+            { role: 'assistant', content: 'browser reply' },
+        ], character.name);
+        await manager.reportBrowserState({
+            characterRef: character.id,
+            chatId: path.basename(chat.path),
+            event: 'generation-finished',
+        });
+
+        assert.equal(manager.pendingSync.length, 0);
+        assert.deepEqual(manager.syncEvents.listBrowserNotifications(), []);
+        assert.match(manager.cmdSync(), /syncMode: off/);
         manager.close();
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });

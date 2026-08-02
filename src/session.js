@@ -14,7 +14,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
-import { getCharacters, generate, setSummary } from './adapter.js';
+import { getCharacters, generate } from './adapter.js';
 import { ChatStore } from './chat-store.js';
 import { ChatRegistry } from './chat-registry.js';
 import { ChatCoordinator } from './chat-coordinator.js';
@@ -47,10 +47,18 @@ export class SessionManager {
         this.metrics = options.metrics || null;
         this.syncMode = cfg.syncMode || 'notify';
         this.activeOwnerId = null;
-        this.pendingSync = this.syncEvents.listBrowserNotifications().map(event => ({
-            ...event,
-            eventId: event.id,
-        }));
+        const storedBrowserNotifications = this.syncEvents.listBrowserNotifications();
+        if (this.syncMode === 'off' && storedBrowserNotifications.length > 0) {
+            this.syncEvents.acknowledgeBrowserNotifications(
+                storedBrowserNotifications.map(event => event.id)
+            );
+        }
+        this.pendingSync = this.syncMode === 'off'
+            ? []
+            : storedBrowserNotifications.map(event => ({
+                ...event,
+                eventId: event.id,
+            }));
         this.pendingSyncByChat = new Map();
         this.userQueues = new Map();
         this.userQueueDepth = new Map();
@@ -265,6 +273,17 @@ export class SessionManager {
         return user.chars[user.current];
     }
 
+    refreshCharSession(userId) {
+        const cs = this.ensureCharSession(userId);
+        if (!cs?.chatPath || !fs.existsSync(cs.chatPath)) return cs;
+        const chat = this.chatStore.parse(cs.chatPath);
+        cs.history = chat.messages;
+        cs.summary = chat.summary;
+        cs.lastWritten = chat.messages.length;
+        restoreSwipeState(cs, chat.messages);
+        return cs;
+    }
+
     /**
      * 当前 Bot 会话可能在浏览器端被删除。使用前重新确认文件存在：
      * 优先切换到该角色最近仍存在的共享聊天；完全没有聊天时才新建。
@@ -312,6 +331,21 @@ export class SessionManager {
             recoveryNotice: created
                 ? '⚠️ 原聊天已被删除，且没有其他聊天；已创建一个新聊天。'
                 : `⚠️ 原聊天已被删除，已切换到最近仍存在的聊天：${path.basename(chat.path)}`,
+        };
+    }
+
+    async ensureCommandChat(userId) {
+        const cs = this.refreshCharSession(userId);
+        if (!cs) return { session: null, notice: '请先选择角色' };
+        if (cs.chatPath && fs.existsSync(cs.chatPath)) {
+            return { session: cs, notice: '' };
+        }
+        const recovered = await this.ensureActiveChat(userId);
+        return {
+            session: recovered.session,
+            notice: recovered.recoveryNotice
+                ? `${recovered.recoveryNotice}\n\n本命令未执行，请确认当前聊天后重新发送。`
+                : '',
         };
     }
 
@@ -679,6 +713,9 @@ export class SessionManager {
     }
 
     cmdSync() {
+        if (this.syncMode === 'off') {
+            return 'ℹ️ 浏览器通知已关闭（syncMode: off），没有可手动补取的同步队列';
+        }
         if (this.pendingSync.length === 0) return '✅ 当前聊天没有待同步的浏览器端内容';
         const batches = this.pendingSync.splice(0);
         const text = formatBrowserSyncBatches(batches, this.syncMode);
@@ -789,7 +826,7 @@ export class SessionManager {
     }
 
     cmdChats(userId) {
-        const cs = this.getCharSession(userId);
+        const cs = this.ensureCharSession(userId);
         if (!cs) return '请先选择角色';
         const chats = this.chatStore.list(cs.chatDirectory);
         if (chats.length === 0) return '📭 当前角色没有聊天记录';
@@ -800,7 +837,7 @@ export class SessionManager {
     }
 
     cmdChat(userId, value) {
-        const cs = this.getCharSession(userId);
+        const cs = this.ensureCharSession(userId);
         if (!cs) return '请先选择角色';
         const chats = this.chatStore.list(cs.chatDirectory);
         const index = Number.parseInt(value, 10) - 1;
@@ -820,15 +857,57 @@ export class SessionManager {
     // ========== 续写 ==========
 
     async cmdContinue(userId, direction) {
-        const cs = this.getCharSession(userId);
-        if (!cs) return '请先选择角色';
-        const contMsg = direction ? `[续写: ${direction}]` : '[续写: 自动]';
-        const reply = await this.generateInChat(cs, userId, 'continue', contMsg, { direction });
-        cs.history.push(
-            { role: 'user', content: contMsg },
-            { role: 'assistant', content: reply }
-        );
-        return `✍️ 续写：\n\n${reply}`;
+        const restored = await this.ensureCommandChat(userId);
+        if (!restored.session || restored.notice) return restored.notice || '请先选择角色';
+        const cs = restored.session;
+        const current = this.chatStore.parse(cs.chatPath);
+        cs.history = current.messages;
+        cs.summary = current.summary;
+        cs.lastWritten = current.messages.length;
+        restoreSwipeState(cs, current.messages);
+        if (cs.history.at(-1)?.role !== 'assistant') return '没有可续写的 AI 回复';
+
+        const startedAt = Date.now();
+        this.metrics?.increment('generationsStarted');
+        let result;
+        try {
+            result = await this.coordinator.run(cs.chatPath, async ({ assertUnchanged }) => {
+                this.observeChat(cs.chatPath);
+                const continuation = await this.withActiveGeneration(userId, signal => this.generator(
+                    cs,
+                    userId,
+                    cs.characterId,
+                    '',
+                    'continue',
+                    { direction },
+                    {
+                        noWrite: true,
+                        signal,
+                        onUsage: usage => this.metrics?.usage(usage),
+                    }
+                ));
+                assertUnchanged();
+                const appended = this.chatStore.appendToLastAssistant(cs.chatPath, continuation);
+                if (!appended) throw new Error('聊天中没有可续写的 AI 回复');
+                const tracked = this.observeChat(cs.chatPath, { source: 'wechat' });
+                this.queueWechatBrowserReload(cs.chatPath, tracked.revision, 'continue');
+                return { continuation, appended };
+            });
+            this.metrics?.increment('generationsSucceeded');
+        } catch (error) {
+            this.metrics?.increment('generationsFailed');
+            this.metrics?.error(classifyOperationError(error), error?.diagnosticId);
+            throw error;
+        } finally {
+            this.metrics?.timing('generation', Date.now() - startedAt);
+        }
+
+        const refreshed = this.chatStore.parse(cs.chatPath);
+        cs.history = refreshed.messages;
+        cs.summary = refreshed.summary;
+        cs.lastWritten = refreshed.messages.length;
+        restoreSwipeState(cs, refreshed.messages);
+        return `✍️ 续写：\n\n${result.continuation}`;
     }
 
     cmdStop(userId) {
@@ -849,8 +928,9 @@ export class SessionManager {
     // ========== 重新生成 ==========
 
     async cmdRetry(userId) {
-        const cs = this.getCharSession(userId);
-        if (!cs) return '请先选择角色';
+        const restored = await this.ensureCommandChat(userId);
+        if (!restored.session || restored.notice) return restored.notice || '请先选择角色';
+        const cs = restored.session;
 
         // 跳过命令产生的合成消息（[续写：...], [请继续], [现在你是用户...] 等）
         const isSynthetic = (msg) => msg && msg.startsWith('[');
@@ -903,8 +983,9 @@ export class SessionManager {
     // ========== 备选 ==========
 
     async cmdSwipe(userId) {
-        const cs = this.getCharSession(userId);
-        if (!cs) return '请先选择角色';
+        const restored = await this.ensureCommandChat(userId);
+        if (!restored.session || restored.notice) return restored.notice || '请先选择角色';
+        const cs = restored.session;
         if (!cs.alternatives || cs.alternatives.length === 0) return '没有备选回复';
         cs.swipeIndex = (cs.swipeIndex + 1) % cs.alternatives.length;
         const selected = await this.coordinator.run(cs.chatPath, async () => {
@@ -929,19 +1010,21 @@ export class SessionManager {
     // ========== 记忆 ==========
 
     async cmdSetMemory(userId, text) {
-        const cs = this.getCharSession(userId);
-        if (!cs) return '请先选择角色';
+        const restored = await this.ensureCommandChat(userId);
+        if (!restored.session || restored.notice) return restored.notice || '请先选择角色';
+        const cs = restored.session;
         if (!text) return '请提供记忆内容，如 /memory 主角和Alice在咖啡馆相遇';
         await this.coordinator.run(cs.chatPath, async ({ assertUnchanged }) => {
             assertUnchanged();
-            setSummary(cs, text);
+            this.chatStore.updateMetadata(cs.chatPath, { summary: text });
+            cs.summary = text;
             this.observeChat(cs.chatPath, { source: 'wechat' });
         });
         return `✅ 记忆已保存：\n${text}`;
     }
 
     cmdGetMemory(userId) {
-        const cs = this.getCharSession(userId);
+        const cs = this.refreshCharSession(userId);
         if (!cs) return '请先选择角色';
         if (!cs.summary) return '📭 暂无记忆。用 /memory 内容 设置';
         return `📝 当前记忆：\n${cs.summary}`;
@@ -954,7 +1037,7 @@ export class SessionManager {
             return `🧰 高级命令：
 
   /memory [内容]  查看或设置当前聊天记忆
-  /sync           手动查看待同步的浏览器内容
+  /sync           查看尚未成功推送的浏览器更新
 
 这些命令通常无需日常使用。`;
         }

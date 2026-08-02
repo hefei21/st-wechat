@@ -199,20 +199,9 @@ export function buildContinueMessages(opts) {
         char, persona, username, prompts, history, direction, worldBook, summary,
         maxContextTokens, maxOutputTokens, charsPerToken,
     } = opts;
-    const charData = char?.data || char;
-
-    // 找最后一条 AI 回复
-    let lastAssistant = '';
-    for (let i = history.length - 1; i >= 0; i--) {
-        if (history[i].role === 'assistant') {
-            lastAssistant = history[i].content;
-            break;
-        }
-    }
-
     const continueMsg = direction
-        ? `${lastAssistant}\n\n[继续，接下来请写：${direction}]`
-        : `${lastAssistant}\n\n[请继续]`;
+        ? `[请直接续写上一条角色回复，不要重复已有内容。续写方向：${direction}]`
+        : '[请直接续写上一条角色回复，不要重复已有内容。]';
 
     return buildMessages({
         char, persona, username, prompts,

@@ -214,6 +214,47 @@ export class ChatStore {
         return false;
     }
 
+    appendToLastAssistant(filePath, continuation) {
+        const safePath = this.assertInsideChats(filePath);
+        const lines = readRawLines(safePath);
+        for (let index = lines.length - 1; index >= 0; index--) {
+            try {
+                const object = JSON.parse(lines[index]);
+                if (!object.is_user && !object.is_system && typeof object.mes === 'string') {
+                    const previous = object.mes;
+                    const appended = `${previous}${String(continuation ?? '')}`;
+                    object.mes = appended;
+
+                    let swipes = null;
+                    let swipeId = 0;
+                    if (Array.isArray(object.swipes) && object.swipes.length > 0) {
+                        swipes = [...object.swipes];
+                        let selected = Number.isInteger(object.swipe_id)
+                            && object.swipe_id >= 0
+                            && object.swipe_id < swipes.length
+                            ? object.swipe_id
+                            : swipes.indexOf(previous);
+                        if (selected < 0) {
+                            swipes.push(previous);
+                            selected = swipes.length - 1;
+                        }
+                        swipeId = selected;
+                        swipes[selected] = appended;
+                        object.swipes = swipes;
+                        object.swipe_id = selected;
+                    }
+
+                    lines[index] = JSON.stringify(object);
+                    this.atomicWriteLines(safePath, lines);
+                    return { content: appended, swipes, swipeId };
+                }
+            } catch {
+                // 未知行原样保留。
+            }
+        }
+        return null;
+    }
+
     selectLastAssistantSwipe(filePath, swipeIndex) {
         const safePath = this.assertInsideChats(filePath);
         const lines = readRawLines(safePath);

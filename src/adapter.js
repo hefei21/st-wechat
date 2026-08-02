@@ -182,16 +182,6 @@ export async function generate(cs, userId, characterRef, message, type, extra = 
     return reply;
 }
 
-/**
- * 更新记忆
- */
-export function setSummary(cs, text) {
-    cs.summary = text;
-    if (cs.chatPath) {
-        getChatStore().updateMetadata(cs.chatPath, { summary: text });
-    }
-}
-
 // ========== LLM API ==========
 
 export async function callLLM(messages, cfg, options = {}) {

@@ -28,7 +28,7 @@ SillyTavern；微信端没有远程重载配置命令。扩展面板的“测试
 | `charsPerToken` | `3` | 无精确 tokenizer 时的估算系数；调小会更保守 |
 | `requestTimeoutMs` | `90000` | 单次 LLM 请求超时，单位毫秒 |
 | `maxQueuedMessages` | `20` | 单所有者普通消息的处理与等待总上限；只读命令不占用 |
-| `syncMode` | `notify` | `off`、`notify` 或 `full`；只影响微信展示投影，不改共享聊天或 LLM 上下文 |
+| `syncMode` | `notify` | `off`、`notify` 或 `full`；`off` 不创建浏览器通知队列，三种模式均不改共享聊天或 LLM 上下文 |
 | `worldInfoBudgetTokens` | `0` | 世界书独立预算；`0` 表示只受总上下文预算约束 |
 | `dataRoot` | `../../data/default-user` | 从插件目录出发的 ST 用户数据目录，解析后必须仍在 SillyTavern 根目录内 |
 
