@@ -47,11 +47,17 @@ try {
             'package.json',
             'package-lock.json',
             'config.yaml',
-            'README.md'
+            'README.md',
+            'CHANGELOG.md',
+            'CONTRIBUTING.md',
+            'SECURITY.md',
+            'deploy/production/compose.yml',
+            'deploy/test/compose.yml'
         )
         $directories = @(
             'src',
-            'ui-extension'
+            'ui-extension',
+            'docs'
         )
 
         foreach ($file in $files) {
@@ -59,7 +65,10 @@ try {
             if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
                 throw "Missing package file: $file"
             }
-            Copy-Item -LiteralPath $source -Destination (Join-Path $packageRoot $file)
+            $destination = Join-Path $packageRoot $file
+            $destinationParent = Split-Path -Parent $destination
+            New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+            Copy-Item -LiteralPath $source -Destination $destination
         }
 
         foreach ($directory in $directories) {

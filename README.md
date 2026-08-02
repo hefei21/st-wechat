@@ -5,6 +5,19 @@
 
 ---
 
+## 适用范围
+
+- 已验证兼容基线：SillyTavern `1.16.0`、Node.js 18+。
+- 支持原生进程和 Docker 部署；Docker 必须持久化 `config`、`data`、`plugins` 与第三方 UI
+  扩展四个目录。
+- 当前采用**单所有者**模型，适合个人使用；它不是多人共享 Bot 或公开聊天服务。
+- 默认只处理文字消息。引用、图片理解、语音转写、视频和文件输入尚未支持。
+
+升级 SillyTavern、修改数据目录或开放外网访问前，请先阅读
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
+
+---
+
 ## 原理
 
 ```
@@ -21,7 +34,7 @@
 
 - 微信扫码登录（iLink / ClawBot）
 - 单所有者验证码认领，其他微信身份默认拒绝访问
-- 每个酒馆角色卡映射为一个 Bot，通过 `/switch` 切换
+- 同一个微信 Bot 可通过 `/switch` 在酒馆角色卡之间切换
 - 支持按酒馆已安装 PNG 角色卡的名称、序号或前缀切换
 - 世界书关键词自动匹配注入
 - 每轮完成后写入酒馆 `chats/` 目录，并与酒馆网页进行最终一致同步
@@ -37,9 +50,10 @@
 
 ## 部署
 
-### 1. 放入插件目录
+### 1. 安装插件
 
-将 `st-wechat/` 整个目录放到酒馆的 `plugins/` 下：
+下载 Release 中的插件 ZIP，解压后将其中的 `st-wechat/` 整个目录放到酒馆的 `plugins/`
+下。也可以从源码复制同名目录。最终必须是单层结构：
 
 ```
 SillyTavern/
@@ -48,24 +62,13 @@ SillyTavern/
         ├── package.json
         ├── config.yaml
         ├── src/
-        │   ├── index.js        ← 插件入口
-        │   ├── ilink.js        ← iLink 微信协议
-        │   ├── config.js       ← ST 配置加载
-        │   ├── adapter.js      ← LLM 调用
-        │   ├── session.js      ← 会话管理 + 命令路由
-        │   ├── prompt-builder.js
-        │   ├── worldbook.js    ← 世界书
-        │   ├── chat-store.js   ← 聊天记录读写
-        │   ├── parser.js       ← 角色卡解析
-        │   └── template.js
-        ├── ui-extension/       ← 酒馆扩展面板
-        │   ├── manifest.json
-        │   ├── index.js
-        │   ├── settings.html
-        │   ├── style.css
-        │   └── qrcode.min.js
-        └── config.yaml
+        │   └── index.js
+        └── ui-extension/
+            └── manifest.json
 ```
+
+不要把旧版本改名后继续留在 `plugins/` 下；SillyTavern 可能同时扫描新旧目录并产生
+`plugin ID is already in use`。升级备份应移到 `plugins/` 之外，具体见部署文档。
 
 ### 2. 编辑 config.yaml（如需要）
 
@@ -103,14 +106,23 @@ maxContextTokens: 64000
 enableServerPlugins: true
 ```
 
-### 4. Docker 用户额外挂载 UI 扩展目录
+修改的是 SillyTavern 根目录中的配置，不是插件自己的 `config.yaml`。修改后需要重启
+SillyTavern。
 
-如果使用 Docker，在 compose 中挂载第三方扩展目录，例如：
+### 4. Docker 用户确认四个持久化目录
+
+如果使用 Docker，至少确认以下四个容器目录均已持久化：
 
 ```yaml
 volumes:
-  - /宿主机路径/extensions/third-party:/home/node/app/public/scripts/extensions/third-party
+  - ./config:/home/node/app/config
+  - ./data:/home/node/app/data
+  - ./plugins:/home/node/app/plugins
+  - ./public/scripts/extensions/third-party:/home/node/app/public/scripts/extensions/third-party
 ```
+
+可以直接参考 [`deploy/production/compose.yml`](deploy/production/compose.yml)。已有部署使用
+绝对路径或命名卷时无需搬迁，只需确保四个容器目标一致且可写。
 
 ### 5. 重启酒馆
 
@@ -118,6 +130,10 @@ volumes:
 docker compose restart sillytavern
 # 或直接重启进程
 ```
+
+重启后打开 SillyTavern 的「扩展」→ **ST WeChat Bot**。首次使用先扫码登录，再查看六位
+所有者认领码，并从准备长期使用的微信账号发送 `/claim 六位码`。认领后其他微信身份默认
+无法访问角色、聊天或模型。
 
 ---
 
@@ -154,7 +170,7 @@ docker compose restart sillytavern
 | 命令 | 说明 |
 |------|------|
 | `/continue [方向]` | AI 续写，可指定方向 |
-| `/retry` `/r` | 重新生成上一条回复 |
+| `/retry` | 重新生成上一条回复，并保留原回复作为 swipe |
 | `/swipe` | 查看备选回复 |
 | `/stop` | 停止当前生成；被取消轮次不写入聊天文件 |
 
@@ -225,6 +241,10 @@ SillyTavern 扩展面板提供模型连通测试、iLink 立即重试和脱敏�
 因此不会返回角色或聊天选择界面；浏览器正在生成或编辑时会延迟到操作完成后再同步。
 同步保证最终一致，不会强制两个界面切换到同一个聊天。
 
+普通微信轮次由 Bot 直接写入 JSONL，浏览器只投影界面，不会再整体保存一遍文件。
+`/retry`、`/swipe` 等原位改写完成后，浏览器会自动重载原 chatId，而不是把替换结果追加成
+重复消息。旧标签页在生成前发现 revision 过期时也会先重载，避免覆盖对端的新记录。
+
 `syncMode` 控制浏览器更新推送：
 
 - `off`：不主动推送。
@@ -241,25 +261,25 @@ SillyTavern 扩展面板提供模型连通测试、iLink 立即重试和脱敏�
 - **Token 有效期**：iLink 通常持续数天，由服务端决定
 - **自动重连**：临时网络异常会保留现有凭据并继续重试，不会立即要求重新扫码
 - **Token 过期**：服务端明确返回 `ret: -14` 后，才清理失效凭据并触发重新扫码
-- **容器重启**：自动从 SillyTavern 持久化数据目录中的 `data/default-user/st-wechat/.wechat_creds.json` 恢复凭据
-- **旧版迁移**：首次启动时会自动把插件目录中的旧 `.wechat_creds.json` 复制到持久化数据目录；完成迁移前不要删除旧插件目录
+- **容器重启**：自动从当前 `dataRoot` 下的 `st-wechat/.wechat_creds.json` 恢复凭据
+- **旧版迁移**：若凭据仍只在旧插件根目录，升级时按部署文档把该文件临时复制到新版
+  插件根目录；首次启动会迁移到持久化 `dataRoot`，确认成功后再移除临时副本
 - **网络断连**：指数退避重试
 
 ---
 
-## 目录结构
+## 插件包核心结构
 
 ```
 st-wechat/
 ├── config.yaml              ← 模型/端点覆盖（可选）
 ├── package.json
-├── .gitignore
 ├── README.md
 ├── src/
 │   ├── index.js             ← 插件入口，部署 UI 扩展
 │   ├── ilink.js             ← iLink 协议（扫码/长轮询/收发）
 │   ├── config.js            ← ST 配置加载
-│   ├── adapter.js           ← 角色加载 + LLM API
+│   ├── adapter.js           ← LLM API
 │   ├── session.js           ← 会话持久化、同步与命令路由
 │   ├── owner-store.js       ← 单所有者认领状态
 │   ├── chat-registry.js     ← 角色/聊天选择和同步游标
@@ -281,7 +301,7 @@ st-wechat/
 登录凭据不再保存在插件目录内，而是保存在 SillyTavern 用户数据目录：
 
 ```text
-data/default-user/st-wechat/.wechat_creds.json
+<dataRoot>/st-wechat/.wechat_creds.json
 ```
 
 该文件包含登录信息，请勿提交、分享或手动修改。只要 Compose 中的
@@ -290,11 +310,13 @@ data/default-user/st-wechat/.wechat_creds.json
 同一目录还会保存：
 
 ```text
-data/default-user/st-wechat/owner.json
-data/default-user/st-wechat/chat-registry.json
+<dataRoot>/st-wechat/owner.json
+<dataRoot>/st-wechat/chat-registry.json
 ```
 
-前者只保存所有者微信身份的加盐摘要，后者只保存相对聊天路径、选择和同步游标；二者都不保存聊天正文、API key 或 iLink token。
+默认 `dataRoot` 是 `data/default-user`；多用户或自定义目录安装应以插件配置的实际路径为准。
+`owner.json` 只保存所有者微信身份的加盐摘要，`chat-registry.json` 只保存相对聊天路径、
+选择和同步游标；二者都不保存聊天正文、API key 或 iLink token。
 
 ---
 
@@ -303,18 +325,27 @@ data/default-user/st-wechat/chat-registry.json
 - Node.js ≥ 18
 - 零 npm 依赖（使用 Node 内置 `fetch`、`fs`、`path`、`crypto`）
 
+## 许可证
+
+本项目采用 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html)
+（SPDX：`AGPL-3.0-only`）。部署修改版并通过网络向用户提供服务时，请同时遵守该许可证的
+源码提供义务。
+
 ## 更多文档
 
 - Docker 生产部署、备份、升级和回滚见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
 - 完整配置项见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)，常见故障见
   [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)。
 - 参与开发和运行自动化测试见 [`CONTRIBUTING.md`](CONTRIBUTING.md)，版本变化见 [`CHANGELOG.md`](CHANGELOG.md)。
+- 安全问题的私密报告方式和部署责任边界见 [`SECURITY.md`](SECURITY.md)。
 
 ## 兼容性与安全边界
 
 - 默认跟随 SillyTavern 当前模型与生成配置；插件默认关闭 thinking，可按需显式开启。
 - `dataRoot` 现已真正生效，但必须指向 SillyTavern 根目录内部。
-- 世界书只加载明确的全局书、当前角色绑定书和角色卡内嵌书，不再默认混入全部世界书。
+- 世界书只加载明确的全局书、当前角色绑定书和角色卡内嵌书，不再默认混入全部世界书；
+  当前实现覆盖关键词、常驻、secondary keys、概率、scan depth、depth 和预算等常用字段，
+  尚未承诺完整复现 SillyTavern 的所有高级世界书行为。
 - 产品采用单所有者模型；首次部署需在本地扩展面板查看六位认领码，并在微信发送 `/claim 六位码`。
 - 同一所有者的普通消息按顺序处理，默认最多允许 20 条正在处理或等待的消息；超过
   `maxQueuedMessages` 时本条不会调用模型，Bot 会提示稍后重新发送。`/status` 等只读命令不受该队列阻塞。

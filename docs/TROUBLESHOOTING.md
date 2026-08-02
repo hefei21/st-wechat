@@ -11,6 +11,13 @@ userId、真实聊天正文或 Docker 主机内部绝对路径。
 4. 日志持续出现“非 JSON 响应”通常是 iLink 上游、代理或网络返回了 HTML 页面，不代表
    SillyTavern 本地登录状态有效。保留脱敏诊断后检查 Docker 主机网络和代理。
 
+## 日志提示 plugin ID already in use
+
+`plugins/` 下同时存在两份 ID 为 `st-wechat` 的插件，常见原因是把旧版仅改名为
+`st-wechat.previous` 后仍留在原目录。停止 SillyTavern，把旧版完整移动到 `plugins/` 之外的
+备份目录，只保留一个 `plugins/st-wechat/`，然后重新启动。不要通过删除唯一旧版来处理，
+回滚副本应保存在不被插件扫描的位置。
+
 ## 局域网访问 Forbidden
 
 这是 SillyTavern 白名单，不是插件错误。把浏览器实际来源 IP 或可信子网加入 ST 白名单；
@@ -34,6 +41,11 @@ userId、真实聊天正文或 Docker 主机内部绝对路径。
 - 浏览器正在流式生成或编辑时，微信增量会等待安全时机再合并，不应整页刷新或跳回聊天列表。
 - 用 `/status` 查看 Bot 当前聊天，用 `/chats` 与 `/chat` 明确切换，不使用已移除的 `/bind`。
 
+如果 `/retry` 或 `/swipe` 后浏览器没有更新，确认页面仍打开相同 chatId，并查看控制台是否有
+扩展加载错误。正常行为是重载同一聊天，不是追加一条新 assistant 消息，也不会返回聊天列表。
+升级插件后若浏览器仍运行旧扩展代码，先关闭其他 SillyTavern 标签页，再用浏览器强制刷新并
+确认扩展版本；不要反复执行命令来“推进同步”。
+
 ## 发送消息提示上一轮没有有效正文
 
 当前 JSONL 末尾存在未完成的 user 消息或仅有思考、没有角色正文。先在浏览器完成或重试该轮，
@@ -44,11 +56,17 @@ userId、真实聊天正文或 Docker 主机内部绝对路径。
 检查 `data` 是否持久化到 `/home/node/app/data`，并确认日志没有 `EACCES`。以下目录必须保留：
 
 ```text
-data/default-user/st-wechat/
+<dataRoot>/st-wechat/
 ```
 
 它包含 iLink 凭据、所有者状态、聊天注册表和事件箱。真实 iLink token 过期仍可能要求重新扫码，
 但普通容器重启不应丢失本地状态。
+
+## 修改配置后仍使用旧模型或旧参数
+
+插件配置和 SillyTavern 模型配置在服务端插件启动时读取。修改后重启 SillyTavern，再在扩展
+面板点击“测试模型连接”。`configurationMode: auto` 读取 `dataRoot` 指向用户的当前配置；
+多用户安装如果仍指向 `default-user`，请改为实际用户目录。微信端没有 `/reload` 或模型修改命令。
 
 ## 图片、语音或文件没有进入角色聊天
 

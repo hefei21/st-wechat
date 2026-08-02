@@ -4,6 +4,10 @@
 对应密钥槽、温度、输出长度和上下文长度。Custom 连接会读取 Custom URL、模型和
 Custom 密钥槽，不会误用同一服务商的内置密钥槽。
 
+配置在插件启动时读取。修改插件 `config.yaml` 或 SillyTavern 当前模型连接后，请重启
+SillyTavern；微信端没有远程重载配置命令。扩展面板的“测试模型连接”用于验证最终解析结果，
+不会替用户修改模型或密钥。
+
 只有需要让 Bot 使用独立配置时才选择 `configurationMode: override`。此模式要求同时显式配置
 `provider`、`endpoint` 和 `model`，并使用插件中的生成参数。无论哪种模式，密钥均按最终连接
 精确选择，不跨密钥槽或服务商回退。
@@ -31,6 +35,10 @@ Custom 密钥槽，不会误用同一服务商的内置密钥槽。
 未知字段会被忽略。无效枚举或数值会使用经过校验的默认值或 ST 当前设置；启动日志只显示
 脱敏后的最终 provider、model 和数据根目录，不输出 API key。
 
+`dataRoot` 必须指向实际使用的 SillyTavern 用户目录。单用户默认安装通常是
+`../../data/default-user`；如果使用多用户模式或改过用户目录，应改成对应路径。插件当前是
+单微信所有者设计，一次只读取一个 `dataRoot`，不会自动遍历所有 ST 用户。
+
 ## 推荐的自动模式
 
 ```yaml
@@ -46,6 +54,10 @@ dataRoot: ../../data/default-user
 
 此时只需在 SillyTavern 中配置并连接模型。内置 DeepSeek 来源会读取 DeepSeek 密钥槽；
 “自定义（兼容 OpenAI）”来源会读取 Custom 密钥槽，无需在插件中手动指定。
+
+自动模式已验证内置 OpenAI、Anthropic、OpenRouter、Gemini、Mistral、Groq、DeepSeek
+以及 Custom 连接的配置映射。第三方兼容端点通常使用 SillyTavern 的 Custom 来源；是否兼容
+仍取决于该端点实际实现的协议。
 
 ## 独立覆盖示例
 
@@ -63,6 +75,9 @@ maxContextTokens: 64000
 覆盖模式仍只从 SillyTavern 的指定密钥槽读取密钥。不要把 API key 直接写入本文件。
 通过 SillyTavern 的密钥管理界面保存，并在扩展面板使用
 “测试模型连接”验证最终解析结果。
+
+`endpoint` 填该服务要求的 API 基础地址；如果服务要求 `/v1`，必须保留它。插件只会在末尾
+补充 `/chat/completions`，不会猜测 API 版本。已经填写完整 `/chat/completions` 路径时不会重复追加。
 
 ## 同步模式
 

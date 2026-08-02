@@ -35,38 +35,59 @@ sillytavern/
 移动生产数据；逐项确认容器目标仍为 `/home/node/app/config`、`data`、`plugins` 和
 `public/scripts/extensions/third-party` 即可。
 
-## 3. 升级前备份
+## 3. 首次安装
+
+1. 在 SillyTavern 根目录的 `config.yaml` 中启用 `enableServerPlugins: true`。
+2. 把 Release ZIP 解压到 `plugins/st-wechat/`，确认该目录直接包含 `package.json`、
+   `config.yaml`、`src/` 和 `ui-extension/`，没有 `st-wechat/st-wechat/` 双层目录。
+3. Docker 用户确认四个持久化挂载完整，尤其是
+   `/home/node/app/public/scripts/extensions/third-party`；插件启动时会把浏览器扩展部署到这里。
+4. 启动或重启 SillyTavern，确认日志只有一个 `st-wechat` 插件实例且没有
+   `plugin ID is already in use`。
+5. 打开「扩展」→ **ST WeChat Bot**，扫码登录并用准备长期使用的微信账号发送面板显示的
+   `/claim 六位码`。
+
+默认 `configurationMode: auto` 会读取默认 `data/default-user` 中 SillyTavern 当前模型连接。
+使用其他 ST 用户目录时，先按 [`CONFIGURATION.md`](CONFIGURATION.md) 修改 `dataRoot`。
+
+## 4. 升级前备份
 
 1. 停止生产服务：`docker compose stop sillytavern`，或在容器管理界面点击停止。
 2. 确认没有进程正在写入 `config`、`data`、`plugins` 和 UI extension 目录。
-3. 创建带日期的备份目录，例如 `backups/2026-08-01-before-1.0/`。
+3. 创建带日期的备份目录，例如 `backups/YYYY-MM-DD-before-st-wechat-1.0/`。
 4. 完整复制以下内容，不只复制插件目录：
    - `config/`
    - `data/`
    - `plugins/`
    - `public/scripts/extensions/third-party/`
    - 当前正在使用的 Compose 文件
-5. 确认备份中存在 `data/default-user`、角色卡、聊天、世界书以及 `plugins/st-wechat/package.json`。
-6. `data/default-user/st-wechat/` 含 iLink 凭据和所有者状态，只保存在受控备份中，不上传
+5. 确认备份中存在当前实际 `dataRoot`、角色卡、聊天、世界书以及 `plugins/st-wechat/package.json`。
+6. `<dataRoot>/st-wechat/` 含 iLink 凭据和所有者状态，只保存在受控备份中，不上传
    公共网盘、不提交 Git，也不要作为问题截图发送。
 
 CLI 用户可使用自己熟悉且能保留权限和时间戳的备份工具；图形界面用户执行等价的停止、
 复制和核对操作。只有完成备份并记录旧镜像标签或 digest 后，才进入升级。
 
-## 4. 升级
+## 5. 升级
 
 1. 保持生产服务停止。
 2. 核对新插件 ZIP 的 SHA-256。
-3. 把旧 `plugins/st-wechat/` 重命名为 `st-wechat.previous/`，不要立即删除。
-4. 解压新包，确认最终是单层 `plugins/st-wechat/package.json`，没有多套一层 ZIP 文件夹。
-5. 确认 UI extension 挂载目录允许容器写入；插件启动时会同步匹配的 UI 文件。
-6. 更新 Compose。首次迁移只改变已经核对的镜像、重启策略、健康检查和挂载，不同时更改
+3. 检查当前 `<dataRoot>/st-wechat/.wechat_creds.json` 是否已经存在。如果不存在、但旧
+   `plugins/st-wechat/.wechat_creds.json` 存在，单独保留这份敏感文件供第 5 步迁移使用。
+4. 把旧 `plugins/st-wechat/` 完整移动到 `plugins/` 扫描目录之外，例如本次备份目录中的
+   `plugins/st-wechat/`。不要只在原位置改名为 `st-wechat.previous`；SillyTavern 仍可能加载它。
+5. 解压新包，确认最终是单层 `plugins/st-wechat/package.json`，没有多套一层 ZIP 文件夹。
+   若第 3 步发现旧凭据，将其临时复制为新目录下的 `plugins/st-wechat/.wechat_creds.json`。
+6. 确认 UI extension 挂载目录允许容器写入；插件启动时会同步匹配的 UI 文件。
+7. 更新 Compose。首次迁移只改变已经核对的镜像、重启策略、健康检查和挂载，不同时更改
    网络、认证与数据根目录。
-7. 执行 `docker compose up -d`，或在图形界面部署/启动项目。
-8. 用 `docker compose ps`、`docker inspect` 或管理界面等待健康状态变为正常；
+8. 执行 `docker compose up -d`，或在图形界面部署/启动项目。
+9. 用 `docker compose ps`、`docker inspect` 或管理界面等待健康状态变为正常；
    `start_period` 为 60 秒，低性能设备首次启动可能更慢。
+10. 若执行了旧凭据迁移，确认日志出现迁移成功且 `<dataRoot>/st-wechat/.wechat_creds.json`
+    已生成，再从新插件根目录移除临时 `.wechat_creds.json`。该文件及备份不得上传或提交。
 
-## 5. 启动后检查
+## 6. 启动后检查
 
 依次确认：
 
@@ -77,23 +98,24 @@ CLI 用户可使用自己熟悉且能保留权限和时间戳的备份工具；�
 5. 浏览器新建一个可丢弃聊天并发送一轮，再用微信 `/status`、`/list`、`/switch` 和普通消息
    验证主链路。
 6. 重启容器，确认聊天、所有者状态和 iLink 登录仍能恢复。
-7. 检查 UI extension 目录与 `data/default-user/st-wechat/` 均可正常更新，且日志无权限错误。
+7. 检查 UI extension 目录与 `<dataRoot>/st-wechat/` 均可正常更新，且日志无权限错误。
 
 第 2、3、6、7 项共同用于检查 config、data、plugins 与 UI extension 四个挂载的读写权限。
 
-## 6. 回滚
+## 7. 回滚
 
 任何一项出现数据缺失、持续不健康、插件无法加载、扫码状态异常或双端主链路阻断时：
 
 1. 立即停止生产服务，不继续发送测试消息。
-2. 把当前故障目录改名保留，例如 `st-wechat.failed-时间/`，不要覆盖唯一故障现场。
+2. 把当前故障插件完整移动到 `plugins/` 扫描目录之外，例如备份根目录下的
+   `failed/st-wechat-时间/`，不要覆盖唯一故障现场，也不要让新旧插件同时留在 `plugins/`。
 3. 恢复升级前 Compose，并把镜像标签改回记录的旧值。
 4. 优先只恢复 `plugins/st-wechat/` 与对应 UI 扩展；如果配置或数据已经发生不兼容变化，
    再从同一次备份整体恢复 `config/`、`data/`、`plugins/` 和 UI extension。
 5. 执行 `docker compose up -d` 或在管理界面启动旧项目，重复“启动后检查”的第 1～6 项。
 6. 回滚成功前保留备份与故障目录；确认稳定后再决定是否清理，不永久删除唯一副本。
 
-## 7. 网络暴露选择
+## 8. 网络暴露选择
 
 模板默认使用 `8000:8000`，适合受控局域网或 VPN。它不代表允许公网访问：防火墙、云安全组
 或路由器不得把 8000 直接暴露到互联网。

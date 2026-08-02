@@ -6,13 +6,12 @@
 # 3. 使用 Docker Compose CLI 或容器管理图形界面创建项目 st-wechat-test。
 # 4. 端口 18000 只允许局域网/VPN 访问，不要转发到公网。
 #
-# 为避免同时升级 SillyTavern，优先把 image 改为生产容器当前使用的
-# 完整版本标签或 digest。若当前管理工具无法查看 digest，保持当前标签，
-# 并在创建项目时关闭“总是拉取最新镜像”。
+# 当前默认使用项目已验证的 SillyTavern 1.16.0。若生产环境使用其他固定版本或 digest，
+# 测试兼容性时应把这里改成与生产一致的值；不要使用 latest 进行可重复验收。
 
 services:
   sillytavern-test:
-    image: ghcr.io/sillytavern/sillytavern:latest
+    image: ghcr.io/sillytavern/sillytavern:1.16.0
     container_name: sillytavern-test
     init: true
     ports:

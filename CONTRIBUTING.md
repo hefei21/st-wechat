@@ -35,6 +35,22 @@ npm run verify
 4. 打开 `http://<Docker主机地址>:18000`，只使用可丢弃的角色、世界书、聊天和测试凭据。
 5. 完成后执行 `docker compose -p st-wechat-test down`。不要把 `runtime/` 指向生产目录。
 
+测试 Compose 默认固定为当前兼容基线 SillyTavern `1.16.0`。验证其他版本时显式修改为固定
+标签或匹配架构的 digest，不使用 `latest` 形成验收结论。
+
+## 发布前检查与打包
+
+Windows PowerShell 中执行：
+
+```powershell
+npm.cmd run preflight
+npm.cmd run package:test
+```
+
+`preflight` 执行语法、完整测试、差异和敏感运行文件检查；打包脚本拒绝未提交的跟踪文件，
+并在 `.artifacts/` 生成带提交号的 ZIP 与 SHA-256。生成候选包前先形成可追溯提交，不使用
+`-AllowDirty` 制作正式 Release 产物。
+
 ## 提交要求
 
 - 一个提交只处理一个清晰目的。
